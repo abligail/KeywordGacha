@@ -40,6 +40,12 @@ class ExpertSettingsPage(QWidget, Base):
         self.root.addWidget(scroll_area)
 
         # 添加控件
+        self.add_widget_multi_agent_enable(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_review_output(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_context_window(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_context_budget(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_context_budget_long(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_gender_retry_long(scroll_area_vbox, config, window)
         self.add_widget_output_choices(scroll_area_vbox, config, window)
         self.add_widget_output_kvjson(scroll_area_vbox, config, window)
 
@@ -63,6 +69,135 @@ class ExpertSettingsPage(QWidget, Base):
             SwitchButtonCard(
                 title = Localizer.get().expert_settings_page_output_choices_title,
                 description = Localizer.get().expert_settings_page_output_choices_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 多 Agent 流程
+    def add_widget_multi_agent_enable(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_enable
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_enable = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_title,
+                description = Localizer.get().expert_settings_page_multi_agent_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 输出复核文件
+    def add_widget_multi_agent_review_output(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_review_output
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_review_output = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_review_title,
+                description = Localizer.get().expert_settings_page_multi_agent_review_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # snippet 窗口行数
+    def add_widget_multi_agent_context_window(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 20)
+            widget.get_spin_box().setValue(config.multi_agent_context_window)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_context_window = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_context_window_title,
+                description = Localizer.get().expert_settings_page_multi_agent_context_window_description,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # snippet 短上下文预算
+    def add_widget_multi_agent_context_budget(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.multi_agent_context_budget)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_context_budget = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_context_budget_title,
+                description = Localizer.get().expert_settings_page_multi_agent_context_budget_description,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # snippet 长上下文预算
+    def add_widget_multi_agent_context_budget_long(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.multi_agent_context_budget_long)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_context_budget_long = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_context_budget_long_title,
+                description = Localizer.get().expert_settings_page_multi_agent_context_budget_long_description,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # 性别判定低置信度重试
+    def add_widget_multi_agent_gender_retry_long(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_gender_retry_long
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_gender_retry_long = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_gender_retry_title,
+                description = Localizer.get().expert_settings_page_multi_agent_gender_retry_description,
                 init = init,
                 checked_changed = checked_changed,
             )

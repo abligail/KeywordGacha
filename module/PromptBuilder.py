@@ -21,6 +21,7 @@ class PromptBuilder(Base):
         cls.get_base.cache_clear()
         cls.get_prefix.cache_clear()
         cls.get_suffix.cache_clear()
+        cls.get_template.cache_clear()
 
     @classmethod
     @lru_cache(maxsize = None)
@@ -40,9 +41,13 @@ class PromptBuilder(Base):
         with open(f"resource/prompt/{language.lower()}/suffix.txt", "r", encoding = "utf-8-sig") as reader:
             return reader.read().strip()
 
-    # 获取主提示词
-    def build_main(self) -> str:
-        # 判断提示词语言
+    @classmethod
+    @lru_cache(maxsize = None)
+    def get_template(cls, language: BaseLanguage.Enum, name: str) -> str:
+        with open(f"resource/prompt/{language.lower()}/{name}.txt", "r", encoding = "utf-8-sig") as reader:
+            return reader.read().strip()
+
+    def resolve_prompt_language(self) -> tuple[BaseLanguage.Enum, str, str]:
         if self.config.target_language == BaseLanguage.Enum.ZH:
             prompt_language = BaseLanguage.Enum.ZH
             source_language = BaseLanguage.get_name_zh(self.config.source_language)
@@ -51,6 +56,13 @@ class PromptBuilder(Base):
             prompt_language = BaseLanguage.Enum.EN
             source_language = BaseLanguage.get_name_en(self.config.source_language)
             target_language = BaseLanguage.get_name_en(self.config.target_language)
+
+        return prompt_language, source_language, target_language
+
+    # 获取主提示词
+    def build_main(self) -> str:
+        # 判断提示词语言
+        prompt_language, source_language, target_language = self.resolve_prompt_language()
 
         with __class__.LOCK:
             # 前缀
@@ -73,6 +85,26 @@ class PromptBuilder(Base):
         full_prompt = full_prompt.replace("{target_language}", target_language)
 
         return full_prompt
+
+    # 获取 Agent 提示词
+    def build_agent_prompt(self, name: str, data: dict[str, str]) -> str:
+        prompt_language, source_language, target_language = self.resolve_prompt_language()
+
+        with __class__.LOCK:
+            try:
+                template = __class__.get_template(prompt_language, name)
+            except FileNotFoundError:
+                return ""
+
+        replacements = {
+            "source_language": source_language,
+            "target_language": target_language,
+        }
+        replacements.update(data or {})
+        for key, value in replacements.items():
+            template = template.replace(f"{{{key}}}", "" if value is None else str(value))
+
+        return template
 
     # 构建输入
     def build_inputs(self, srcs: list[str]) -> str:

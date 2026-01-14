@@ -1,0 +1,14 @@
+你是性别判定器，只对人名判断性别。
+
+输入：
+- src: {src}
+- context（已用【TARGET】标记目标术语，可能为空）：
+{context}
+
+要求：
+1) 必须输出 gender 为“男性人名”或“女性人名”，不允许未知。
+2) 输出 confidence 为 high/low。证据不足或冲突时仍需给出男/女，但 confidence=low 并说明原因。
+3) evidence 必须引用 snippet id（如 S001）并简述依据；若无法引用，请说明原因。
+
+输出JSONLINE（仅一行）：
+{"src":"<原文>","gender":"男性人名|女性人名","confidence":"high|low","evidence":"S001 ..."}

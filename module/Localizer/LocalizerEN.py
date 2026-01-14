@@ -111,6 +111,8 @@ class LocalizerEN(LocalizerZH):
     ner_output_log_info_choices: str = "Infomation Choices: "
     ner_output_log_count: str = "Count: "
     ner_output_log_context: str = "Context: "
+    ner_output_log_review_reason: str = "Review Reason: "
+    ner_output_log_review_evidence: str = "Evidence: "
 
     # 应用设置
     app_settings_page_expert_title: str = "Expert Mode"
@@ -236,6 +238,18 @@ class LocalizerEN(LocalizerZH):
     expert_settings_page_output_choices_description: str = "Include choices data in the output for proofreading, disabled by default"
     expert_settings_page_output_kvjson_title: str = "Output KVJSON File"
     expert_settings_page_output_kvjson_description: str = "Generate KVJSON format data file when outputting results, disabled by default"
+    expert_settings_page_multi_agent_title: str = "Multi-Agent Pipeline"
+    expert_settings_page_multi_agent_description: str = "Enable validation + gender completion + review output stages"
+    expert_settings_page_multi_agent_review_title: str = "Output Review Files"
+    expert_settings_page_multi_agent_review_description: str = "Write review files for low-confidence or conflicting entries"
+    expert_settings_page_multi_agent_context_window_title: str = "Snippet Window Size"
+    expert_settings_page_multi_agent_context_window_description: str = "Lines to include before/after each hit"
+    expert_settings_page_multi_agent_context_budget_title: str = "Short Context Budget"
+    expert_settings_page_multi_agent_context_budget_description: str = "Character budget for the short context pass"
+    expert_settings_page_multi_agent_context_budget_long_title: str = "Long Context Budget"
+    expert_settings_page_multi_agent_context_budget_long_description: str = "Character budget for the long context pass"
+    expert_settings_page_multi_agent_gender_retry_title: str = "Retry Low-Confidence Gender"
+    expert_settings_page_multi_agent_gender_retry_description: str = "Retry gender classification with long context when confidence is low"
 
     # 质量类通用
     quality_import: str = "Import"

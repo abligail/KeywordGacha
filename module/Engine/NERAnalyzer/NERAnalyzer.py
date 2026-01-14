@@ -25,8 +25,11 @@ from module.File.FileManager import FileManager
 from module.Filter.LanguageFilter import LanguageFilter
 from module.Filter.RuleFilter import RuleFilter
 from module.Localizer.Localizer import Localizer
+from module.Normalizer import Normalizer
 from module.ProgressBar import ProgressBar
 from module.PromptBuilder import PromptBuilder
+from module.Response.ResponseDecoder import ResponseDecoder
+from module.RubyCleaner import RubyCleaner
 from module.Text.TextHelper import TextHelper
 
 class NERAnalyzer(Base):
@@ -37,6 +40,33 @@ class NERAnalyzer(Base):
         "other",
         "others",
     }
+
+    TARGET_MARKER_START: str = "【TARGET】"
+    TARGET_MARKER_END: str = "【/TARGET】"
+    GENDER_CLUES: tuple[tuple[str, int]] = (
+        ("彼女", 3),
+        ("彼", 2),
+        ("妻", 3),
+        ("夫", 3),
+        ("母", 3),
+        ("父", 3),
+        ("姉", 3),
+        ("兄", 3),
+        ("少女", 3),
+        ("少年", 3),
+        ("女の子", 3),
+        ("男の子", 3),
+        ("王女", 3),
+        ("王子", 3),
+        ("女", 2),
+        ("男", 2),
+        ("俺", 1),
+        ("僕", 1),
+        ("私", 1),
+        ("あたし", 1),
+        ("くん", 1),
+        ("ちゃん", 1),
+    )
 
     # 类变量
     OPENCCT2S: opencc.OpenCC = opencc.OpenCC("t2s")
@@ -430,11 +460,24 @@ class NERAnalyzer(Base):
         # 计数
         glossary = self.search_for_context(glossary, self.cache_manager.get_items(), end)
 
+        review_entries: list[dict[str, str]] = []
+        if self.config.multi_agent_enable == True and end == True:
+            glossary, review_entries = self.apply_multi_agent_pipeline(glossary)
+
         # 排序
         glossary = sorted(glossary, key = lambda x: x.get("src"))
 
         # 写入文件
-        FileManager(self.config).write_to_path(glossary)
+        file_manager = FileManager(self.config)
+        file_manager.write_to_path(glossary)
+        if (
+            self.config.multi_agent_enable == True
+            and end == True
+            and self.config.multi_agent_review_output == True
+            and review_entries != []
+        ):
+            review_entries = sorted(review_entries, key = lambda x: x.get("src", ""))
+            file_manager.write_review_to_path(review_entries)
         self.print("")
         self.info(Localizer.get().engine_task_save_done.replace("{PATH}", self.config.output_folder))
         self.print("")
@@ -480,10 +523,47 @@ class NERAnalyzer(Base):
             "info_choices": info_choices,
         }
 
+    def apply_pre_replacement(self, src: str) -> str:
+        if self.config.pre_replacement_enable == False:
+            return src
+
+        for v in self.config.pre_replacement_data:
+            if v.get("regex", False) != True:
+                src = src.replace(v.get("src"), v.get("dst"))
+            else:
+                src = re.sub(rf"{v.get('src')}", rf"{v.get('dst')}", src)
+
+        return src
+
+    def normalize_context_text(self, src: str) -> str:
+        if not isinstance(src, str):
+            return ""
+
+        text = Normalizer.normalize(src)
+        text = RubyCleaner.clean(text)
+        text = self.apply_pre_replacement(text)
+
+        return text
+
     # 搜索参考文本，并按出现次数排序
     def search_for_context(self, glossary: list[dict[str, str]], items: list[Item], end: bool) -> list[dict[str, str | int | list[str]]]:
-        lines: list[str] = [item.get_src().strip() for item in items if item.get_status() == Base.ProjectStatus.PROCESSED]
-        lines_cp: list[str] = lines.copy()
+        lines_info: list[tuple[str, str]] = [
+            (item.get_file_path(), item.get_src().strip())
+            for item in items
+            if item.get_status() == Base.ProjectStatus.PROCESSED
+        ]
+        raw_lines: list[str] = [line for _, line in lines_info]
+        raw_lines_cp: list[str] = raw_lines.copy()
+        normalized_lines: list[str] = [self.normalize_context_text(line) for line in raw_lines]
+        normalized_lines_cp: list[str] = normalized_lines.copy()
+        match_lines_raw: list[str] = raw_lines.copy()
+        match_lines_norm: list[str] = normalized_lines.copy()
+        file_positions: dict[str, list[int]] = {}
+        file_index_map: dict[int, int] = {}
+        for idx, (file_path, _) in enumerate(lines_info):
+            positions = file_positions.setdefault(file_path, [])
+            positions.append(idx)
+            file_index_map[idx] = len(positions) - 1
 
         # 按实体词语的长度降序排序
         glossary = sorted(glossary, key = lambda x: len(x.get("src")), reverse = True)
@@ -494,32 +574,630 @@ class NERAnalyzer(Base):
             for entry in glossary:
                 progress.update(pid, advance = 1, total = len(glossary)) if end == True else None
                 src: str = entry.get("src")
+                raw_src = src.strip()
+                normalized_src = self.normalize_context_text(raw_src)
 
                 # 找出匹配的行
-                index = {i for i, line in enumerate(lines) if src in line}
+                index: set[int] = set()
+                use_normalized = False
+                if normalized_src != "":
+                    index = {i for i, line in enumerate(match_lines_norm) if normalized_src in line}
+                    use_normalized = index != set()
+                if index == set() and raw_src != "":
+                    index = {i for i, line in enumerate(match_lines_raw) if raw_src in line}
+                    use_normalized = False
 
                 # 获取匹配的参考文本，去重，并按长度降序排序
                 entry["context"] = sorted(
-                    list({line for i, line in enumerate(lines_cp) if i in index}),
+                    list({line for i, line in enumerate(raw_lines_cp) if i in index}),
                     key = lambda x: len(x),
                     reverse = True,
                 )
                 entry["count"] = len(entry.get("context"))
 
+                if self.config.multi_agent_enable == True and end == True:
+                    snippet_lines = normalized_lines_cp if use_normalized == True else raw_lines_cp
+                    target_src = normalized_src if use_normalized == True else raw_src
+                    entry["snippets"] = self.build_snippets(
+                        target_src,
+                        index,
+                        lines_info,
+                        snippet_lines,
+                        file_positions,
+                        file_index_map,
+                    )
+
                 # 掩盖已命中的实体词语文本，避免其子串错误的与父串匹配
-                lines = [
-                    line.replace(src, len(src) * "#") if i in index else line
-                    for i, line in enumerate(lines)
-                ]
+                if index != set():
+                    if normalized_src != "":
+                        match_lines_norm = [
+                            line.replace(normalized_src, len(normalized_src) * "#") if i in index else line
+                            for i, line in enumerate(match_lines_norm)
+                        ]
+                    if raw_src != "":
+                        match_lines_raw = [
+                            line.replace(raw_src, len(raw_src) * "#") if i in index else line
+                            for i, line in enumerate(match_lines_raw)
+                        ]
 
         # 打印日志
         self.info(Localizer.get().engine_task_context_search.replace("{COUNT}", str(len(glossary))))
 
-        # 排除零结果
-        glossary = [v for v in glossary if v.get("count") > 0]
-
         # 按出现次数降序排序
         return sorted(glossary, key = lambda x: x.get("count"), reverse = True)
+
+    def build_snippets(
+        self,
+        src: str,
+        indices: set[int],
+        lines_info: list[tuple[str, str]],
+        lines_text: list[str],
+        file_positions: dict[str, list[int]],
+        file_index_map: dict[int, int],
+    ) -> list[dict[str, str | int]]:
+        if not isinstance(src, str) or src == "":
+            return []
+
+        window = max(0, int(self.config.multi_agent_context_window))
+        snippets: list[dict[str, str | int]] = []
+        seen: set[str] = set()
+
+        for idx in sorted(indices):
+            file_path = lines_info[idx][0]
+            positions = file_positions.get(file_path, [])
+            local_pos = file_index_map.get(idx, 0)
+            start = max(0, local_pos - window)
+            end = min(len(positions) - 1, local_pos + window)
+            snippet_indices = positions[start : end + 1] if positions != [] else [idx]
+
+            snippet_lines = [lines_text[i] for i in snippet_indices]
+            snippet_text = "\n".join(snippet_lines)
+            highlighted = snippet_text.replace(
+                src,
+                f"{__class__.TARGET_MARKER_START}{src}{__class__.TARGET_MARKER_END}",
+            )
+            if highlighted in seen:
+                continue
+
+            seen.add(highlighted)
+            snippets.append(
+                {
+                    "text": highlighted,
+                    "score": self.score_snippet(highlighted),
+                    "order": snippet_indices[0] if snippet_indices != [] else idx,
+                }
+            )
+
+        return snippets
+
+    def score_snippet(self, text: str) -> int:
+        score = 0
+        for token, weight in __class__.GENDER_CLUES:
+            if token in text:
+                score += weight * text.count(token)
+        return score
+
+    def format_snippet_context(self, snippets: list[dict[str, str | int]], budget: int, prompt_language: BaseLanguage.Enum) -> str:
+        if snippets == []:
+            return "（无上下文）" if prompt_language == BaseLanguage.Enum.ZH else "No context."
+
+        budget = max(0, int(budget))
+        sorted_snippets = sorted(
+            snippets,
+            key = lambda x: (-int(x.get("score", 0)), int(x.get("order", 0))),
+        )
+
+        blocks: list[str] = []
+        used = 0
+        for idx, snippet in enumerate(sorted_snippets, start = 1):
+            block = f"[S{idx:03d}]\n{snippet.get('text', '')}"
+            if blocks != [] and used + len(block) > budget:
+                break
+            blocks.append(block)
+            used += len(block)
+
+        return "\n\n".join(blocks)
+
+    def get_gender_labels(self) -> dict[str, str]:
+        if self.config.target_language == BaseLanguage.Enum.ZH:
+            return {
+                "male": "男性人名",
+                "female": "女性人名",
+                "unknown": "未知性别人名",
+            }
+        else:
+            return {
+                "male": "Male Name",
+                "female": "Female Name",
+                "unknown": "Name of Unknown Gender",
+            }
+
+    def is_person_name(self, info: str) -> bool:
+        if not isinstance(info, str):
+            return False
+        text = info.strip().lower()
+        return "人名" in text or "name" in text
+
+    def is_unknown_gender(self, info: str) -> bool:
+        if not isinstance(info, str):
+            return False
+        labels = self.get_gender_labels()
+        text = info.strip().lower()
+        if text == labels.get("unknown", "").lower():
+            return True
+        return ("unknown" in text and "name" in text) or ("未知" in text)
+
+    def map_gender_label(self, gender: str) -> str:
+        labels = self.get_gender_labels()
+        if gender == "男性人名":
+            return labels.get("male")
+        if gender == "女性人名":
+            return labels.get("female")
+
+        text = str(gender).strip().lower()
+        if "male" in text or "男" in text:
+            return labels.get("male")
+        if "female" in text or "女" in text:
+            return labels.get("female")
+
+        return ""
+
+    def is_evidence_valid(self, evidence: str) -> bool:
+        if not isinstance(evidence, str):
+            return False
+        text = evidence.strip()
+        if text == "":
+            return False
+        return re.search(r"S\d{3}", text, flags = re.IGNORECASE) is not None
+
+    def is_validator_result_invalid(self, result: dict[str, str | bool] | None) -> bool:
+        if not isinstance(result, dict):
+            return True
+        return result.get("keep") is None
+
+    def is_gender_result_invalid(self, result: dict[str, str] | None) -> bool:
+        if not isinstance(result, dict):
+            return True
+        if result.get("gender", "") == "" or result.get("confidence", "") == "":
+            return True
+        if self.is_evidence_valid(result.get("evidence", "")) == False:
+            return True
+        return False
+
+    def apply_multi_agent_pipeline(self, glossary: list[dict[str, str | int | list[str]]]) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
+        if glossary == []:
+            return glossary, []
+
+        prompt_builder = PromptBuilder(self.config)
+        prompt_language, _, _ = prompt_builder.resolve_prompt_language()
+        max_workers, rpm_threshold = self.initialize_max_workers()
+
+        glossary, validator_review_entries = self.run_validator(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
+        glossary, gender_review_entries = self.run_gender(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
+        review_entries = self.merge_review_entries(validator_review_entries, gender_review_entries)
+
+        for entry in glossary:
+            entry.pop("snippets", None)
+            entry.pop("validator_reason", None)
+
+        return glossary, review_entries
+
+    def run_validator(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        max_workers: int,
+        rpm_threshold: int,
+    ) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
+        if glossary == []:
+            return glossary, []
+
+        task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
+        results: dict[str, dict[str, str | bool]] = {}
+
+        with ProgressBar(transient = True) as progress:
+            pid = progress.new()
+            with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
+                futures = []
+                for entry in glossary:
+                    task_limiter.wait()
+                    futures.append(executor.submit(self.request_validator, entry, prompt_builder, prompt_language))
+
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    if isinstance(result, dict) and result.get("src"):
+                        results[result.get("src")] = result
+                    progress.update(pid, advance = 1, total = len(futures))
+
+        kept: list[dict[str, str | int | list[str]]] = []
+        review_entries: list[dict[str, str]] = []
+        for entry in glossary:
+            decision = results.get(entry.get("src"))
+            if isinstance(decision, dict):
+                if decision.get("keep") is False:
+                    continue
+                if decision.get("reason"):
+                    entry["validator_reason"] = decision.get("reason")
+                if decision.get("keep") is None:
+                    review_entries.append(
+                        self.build_validator_review_entry(
+                            entry,
+                            prompt_language,
+                            str(decision.get("reason", "")),
+                            str(decision.get("context", "")),
+                        )
+                    )
+                kept.append(entry)
+            else:
+                review_entries.append(
+                    self.build_validator_review_entry(
+                        entry,
+                        prompt_language,
+                        "missing",
+                        "",
+                    )
+                )
+                kept.append(entry)
+
+        return kept, review_entries
+
+    def run_gender(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        max_workers: int,
+        rpm_threshold: int,
+    ) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
+        candidates = [
+            entry for entry in glossary
+            if self.is_person_name(entry.get("info", ""))
+        ]
+        if candidates == []:
+            return glossary, []
+
+        task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
+        results: dict[str, dict[str, str]] = {}
+
+        with ProgressBar(transient = True) as progress:
+            pid = progress.new()
+            with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
+                futures = []
+                for entry in candidates:
+                    task_limiter.wait()
+                    futures.append(executor.submit(self.request_gender, entry, prompt_builder, prompt_language))
+
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    if isinstance(result, dict) and result.get("src"):
+                        results[result.get("src")] = result
+                    progress.update(pid, advance = 1, total = len(futures))
+
+        review_entries: list[dict[str, str]] = []
+        labels = self.get_gender_labels()
+        for entry in glossary:
+            result = results.get(entry.get("src"))
+            if result is None:
+                continue
+
+            gender = self.map_gender_label(result.get("gender", ""))
+            confidence = result.get("confidence", "")
+            evidence = result.get("evidence", "")
+            context = result.get("context", "")
+            review_reason = ""
+            evidence_valid = self.is_evidence_valid(evidence)
+
+            if gender == "":
+                gender = labels.get("male")
+                confidence = "low"
+                review_reason = "invalid_output"
+            elif confidence == "":
+                confidence = "low"
+                review_reason = "invalid_output"
+
+            if evidence_valid == False:
+                confidence = "low"
+                if review_reason == "":
+                    review_reason = "invalid_evidence"
+
+            entry["info"] = gender
+            info_choices = entry.get("info_choices")
+            if isinstance(info_choices, set):
+                info_choices.add(gender)
+
+            if confidence != "high":
+                if review_reason == "":
+                    review_reason = "low_confidence"
+                review_entries.append(
+                    self.build_review_entry(entry, prompt_language, review_reason, evidence, context)
+                )
+
+        return glossary, review_entries
+
+    def request_validator(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+    ) -> dict[str, str | bool] | None:
+        short_budget = max(0, int(self.config.multi_agent_context_budget))
+        long_budget = max(0, int(self.config.multi_agent_context_budget_long))
+
+        short_result = self.request_validator_once(entry, prompt_builder, prompt_language, short_budget)
+        if self.is_validator_result_invalid(short_result) == True:
+            retry_budget = long_budget if long_budget > short_budget else short_budget
+            long_result = self.request_validator_once(entry, prompt_builder, prompt_language, retry_budget)
+            return self.pick_validator_result(short_result, long_result)
+
+        return short_result
+
+    def request_validator_once(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        budget: int,
+    ) -> dict[str, str | bool] | None:
+        context = self.format_snippet_context(
+            entry.get("snippets", []),
+            budget,
+            prompt_language,
+        )
+        prompt = prompt_builder.build_agent_prompt(
+            "validator",
+            {
+                "src": entry.get("src", ""),
+                "type_hint": entry.get("info", ""),
+                "context": context,
+            },
+        )
+        if prompt == "":
+            return None
+
+        requester = TaskRequester(self.config, self.platform)
+        skip, _, response_result, _, _ = requester.request([
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ])
+        if skip == True or response_result is None:
+            return {
+                "src": entry.get("src", ""),
+                "keep": None,
+                "reason": "request_failed",
+                "context": context,
+            }
+
+        results = ResponseDecoder().decode_validator(response_result)
+        if results != []:
+            result = results[0]
+            if result.get("src", "") == "":
+                result["src"] = entry.get("src", "")
+            result["context"] = context
+            return result
+
+        return {
+            "src": entry.get("src", ""),
+            "keep": None,
+            "reason": "parse_failed",
+            "context": context,
+        }
+
+    def pick_validator_result(
+        self,
+        short_result: dict[str, str | bool] | None,
+        long_result: dict[str, str | bool] | None,
+    ) -> dict[str, str | bool] | None:
+        if long_result is None:
+            return short_result
+        if short_result is None:
+            return long_result
+
+        short_invalid = self.is_validator_result_invalid(short_result)
+        long_invalid = self.is_validator_result_invalid(long_result)
+        if short_invalid == True and long_invalid == False:
+            return long_result
+        if long_invalid == True and short_invalid == False:
+            return short_result
+
+        return long_result
+
+    def request_gender(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+    ) -> dict[str, str] | None:
+        short_budget = max(0, int(self.config.multi_agent_context_budget))
+        long_budget = max(0, int(self.config.multi_agent_context_budget_long))
+
+        result = self.request_gender_once(entry, prompt_builder, prompt_language, short_budget)
+        needs_retry = self.is_gender_result_invalid(result)
+        if (
+            needs_retry == False
+            and result is not None
+            and result.get("confidence") != "high"
+            and self.config.multi_agent_gender_retry_long == True
+        ):
+            needs_retry = True
+        if needs_retry == True:
+            retry_budget = long_budget if long_budget > short_budget else short_budget
+            long_result = self.request_gender_once(entry, prompt_builder, prompt_language, retry_budget)
+            result = self.pick_gender_result(result, long_result)
+
+        return result
+
+    def request_gender_once(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        budget: int,
+    ) -> dict[str, str] | None:
+        context = self.format_snippet_context(
+            entry.get("snippets", []),
+            budget,
+            prompt_language,
+        )
+        prompt = prompt_builder.build_agent_prompt(
+            "gender",
+            {
+                "src": entry.get("src", ""),
+                "context": context,
+            },
+        )
+        if prompt == "":
+            return None
+
+        requester = TaskRequester(self.config, self.platform)
+        skip, _, response_result, _, _ = requester.request([
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ])
+        if skip == True or response_result is None:
+            return {
+                "src": entry.get("src", ""),
+                "gender": "",
+                "confidence": "",
+                "evidence": "",
+                "context": context,
+            }
+
+        results = ResponseDecoder().decode_gender(response_result)
+        if results != []:
+            result = results[0]
+            if result.get("src", "") == "":
+                result["src"] = entry.get("src", "")
+            result["context"] = context
+            return result
+
+        return {
+            "src": entry.get("src", ""),
+            "gender": "",
+            "confidence": "",
+            "evidence": "",
+            "context": context,
+        }
+
+    def pick_gender_result(self, short_result: dict[str, str] | None, long_result: dict[str, str] | None) -> dict[str, str] | None:
+        if long_result is None:
+            return short_result
+        if short_result is None:
+            return long_result
+
+        short_invalid = self.is_gender_result_invalid(short_result)
+        long_invalid = self.is_gender_result_invalid(long_result)
+        if short_invalid == True and long_invalid == False:
+            return long_result
+        if long_invalid == True and short_invalid == False:
+            return short_result
+        if short_invalid == True and long_invalid == True:
+            return long_result
+
+        short_confidence = short_result.get("confidence", "")
+        long_confidence = long_result.get("confidence", "")
+        if short_confidence != "high" and long_confidence == "high":
+            return long_result
+
+        short_evidence_valid = self.is_evidence_valid(short_result.get("evidence", ""))
+        long_evidence_valid = self.is_evidence_valid(long_result.get("evidence", ""))
+        if short_evidence_valid == False and long_evidence_valid == True:
+            return long_result
+        if short_evidence_valid == True and long_evidence_valid == False:
+            return short_result
+
+        return short_result
+
+    def build_review_entry(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_language: BaseLanguage.Enum,
+        reason_key: str,
+        evidence: str,
+        context: str,
+    ) -> dict[str, str]:
+        if prompt_language == BaseLanguage.Enum.ZH:
+            if reason_key == "low_confidence":
+                reason = "证据不足/冲突"
+            elif reason_key == "invalid_evidence":
+                reason = "证据不合格"
+            else:
+                reason = "模型输出异常"
+            info = f"{entry.get('info', '')}（需复核：{reason}）"
+        else:
+            if reason_key == "low_confidence":
+                reason = "insufficient/conflicting evidence"
+            elif reason_key == "invalid_evidence":
+                reason = "invalid evidence"
+            else:
+                reason = "invalid model output"
+            info = f"{entry.get('info', '')} (Review: {reason})"
+
+        return {
+            "src": entry.get("src", ""),
+            "dst": entry.get("dst", ""),
+            "info": info,
+            "review_reason": reason,
+            "review_evidence": evidence,
+            "review_context": context,
+        }
+
+    def build_validator_review_entry(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_language: BaseLanguage.Enum,
+        reason_key: str,
+        context: str,
+    ) -> dict[str, str]:
+        reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        reason_detail = ""
+        if prompt_language == BaseLanguage.Enum.ZH:
+            if reason_key == "request_failed":
+                reason = "验证请求失败"
+            elif reason_key == "parse_failed":
+                reason = "验证解析失败"
+            elif reason_key == "missing":
+                reason = "验证结果缺失"
+            else:
+                reason = "验证失败"
+                reason_detail = reason_key
+            info = f"{entry.get('info', '')}（需复核：{reason}）"
+        else:
+            if reason_key == "request_failed":
+                reason = "validator request failed"
+            elif reason_key == "parse_failed":
+                reason = "validator parse failed"
+            elif reason_key == "missing":
+                reason = "validator result missing"
+            else:
+                reason = "validator failed"
+                reason_detail = reason_key
+            info = f"{entry.get('info', '')} (Review: {reason})"
+
+        review_reason = reason if reason_detail == "" else f"{reason} ({reason_detail})"
+
+        return {
+            "src": entry.get("src", ""),
+            "dst": entry.get("dst", ""),
+            "info": info,
+            "review_reason": review_reason,
+            "review_evidence": "",
+            "review_context": context,
+        }
+
+    def merge_review_entries(self, *groups: list[dict[str, str]]) -> list[dict[str, str]]:
+        merged: dict[str, dict[str, str]] = {}
+        for group in groups:
+            for entry in group:
+                src = entry.get("src", "")
+                if src == "":
+                    continue
+                merged[src] = entry
+        return list(merged.values())
 
     # 中文字型转换
     def convert_chinese_character_form(self, src: str) -> str:

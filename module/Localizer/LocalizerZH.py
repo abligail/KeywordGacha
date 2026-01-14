@@ -111,6 +111,8 @@ class LocalizerZH():
     ner_output_log_info_choices: str = "备注候选："
     ner_output_log_count: str = "出现次数："
     ner_output_log_context: str = "参考文本："
+    ner_output_log_review_reason: str = "复核原因："
+    ner_output_log_review_evidence: str = "证据："
 
     # 应用设置
     app_settings_page_expert_title: str = "专家模式"
@@ -236,6 +238,18 @@ class LocalizerZH():
     expert_settings_page_output_choices_description: str = "在输出结果时包含候选数据以供校对使用，默认禁用"
     expert_settings_page_output_kvjson_title: str = "输出 KVJSON 文件"
     expert_settings_page_output_kvjson_description: str = "在输出结果时生成 KVJSON 格式的数据文件，默认禁用"
+    expert_settings_page_multi_agent_title: str = "多 Agent 流程"
+    expert_settings_page_multi_agent_description: str = "启用多阶段术语表流程（验证 + 性别补全 + 复核输出）"
+    expert_settings_page_multi_agent_review_title: str = "输出复核文件"
+    expert_settings_page_multi_agent_review_description: str = "对低置信度或冲突项输出复核文件"
+    expert_settings_page_multi_agent_context_window_title: str = "snippet 窗口行数"
+    expert_settings_page_multi_agent_context_window_description: str = "以命中行为锚点，向前/向后扩展的行数（两侧）"
+    expert_settings_page_multi_agent_context_budget_title: str = "snippet 短上下文预算"
+    expert_settings_page_multi_agent_context_budget_description: str = "普通档上下文字符预算（约 4k）"
+    expert_settings_page_multi_agent_context_budget_long_title: str = "snippet 长上下文预算"
+    expert_settings_page_multi_agent_context_budget_long_description: str = "加长档上下文字符预算（约 8k）"
+    expert_settings_page_multi_agent_gender_retry_title: str = "低置信度重试（长上下文）"
+    expert_settings_page_multi_agent_gender_retry_description: str = "性别判定低置信度时使用加长上下文重跑"
 
     # 质量类通用
     quality_import: str = "导入"

@@ -192,3 +192,81 @@ class FileManager(Base):
                     writer.write("\n")
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
+
+    def write_review_to_path(self, glossary: list[dict[str, str]]) -> None:
+        self.write_review_to_path_xlsx(glossary)
+        self.write_review_to_path_json(glossary)
+        self.write_review_to_path_detail(glossary)
+
+    def write_review_to_path_xlsx(self, glossary: list[dict[str, str]]) -> None:
+        try:
+            glossary = copy.deepcopy(glossary)
+
+            book: openpyxl.Workbook = openpyxl.Workbook()
+            sheet: openpyxl.worksheet.worksheet.Worksheet = book.active
+
+            sheet.column_dimensions["A"].width = 24
+            sheet.column_dimensions["B"].width = 24
+            sheet.column_dimensions["C"].width = 24
+
+            sheet.auto_filter.ref = "A1:C1"
+
+            TableManager.set_cell_value(sheet, 1, 1, "src", 10)
+            TableManager.set_cell_value(sheet, 1, 2, "dst", 10)
+            TableManager.set_cell_value(sheet, 1, 3, "info", 10)
+
+            for row, entry in enumerate(glossary):
+                TableManager.set_cell_value(sheet, row + 2, 1, entry.get("src", ""), 10)
+                TableManager.set_cell_value(sheet, row + 2, 2, entry.get("dst", ""), 10)
+                TableManager.set_cell_value(sheet, row + 2, 3, entry.get("info", ""), 10)
+
+            book.save(f"{self.config.output_folder}/output_review.xlsx")
+        except Exception as e:
+            self.error(f"{Localizer.get().log_read_file_fail}", e)
+
+    def write_review_to_path_json(self, glossary: list[dict[str, str]]) -> None:
+        try:
+            glossary = copy.deepcopy(glossary)
+            review_data = [
+                {
+                    "src": v.get("src", ""),
+                    "dst": v.get("dst", ""),
+                    "info": v.get("info", ""),
+                }
+                for v in glossary
+            ]
+
+            with open(f"{self.config.output_folder}/output_review.json", "w", encoding = "utf-8") as writer:
+                writer.write(json.dumps(review_data, indent = 4, ensure_ascii = False))
+        except Exception as e:
+            self.error(f"{Localizer.get().log_read_file_fail}", e)
+
+    def write_review_to_path_detail(self, glossary: list[dict[str, str]]) -> None:
+        try:
+            glossary = copy.deepcopy(glossary)
+
+            with open(f"{self.config.output_folder}/output_review_detail.txt", "w", encoding = "utf-8") as writer:
+                for entry in glossary:
+                    src: str = entry.get("src", "")
+                    dst: str = entry.get("dst", "")
+                    info: str = entry.get("info", "")
+                    reason: str = entry.get("review_reason", "")
+                    evidence: str = entry.get("review_evidence", "")
+                    context = entry.get("review_context", "")
+
+                    writer.write(f"{Localizer.get().ner_output_log_src}{src}" + "\n")
+                    writer.write(f"{Localizer.get().ner_output_log_dst}{dst}" + "\n")
+                    writer.write(f"{Localizer.get().ner_output_log_info}{info}" + "\n")
+                    if reason != "":
+                        writer.write(f"{Localizer.get().ner_output_log_review_reason}{reason}" + "\n")
+                    if evidence != "":
+                        writer.write(f"{Localizer.get().ner_output_log_review_evidence}{evidence}" + "\n")
+                    writer.write(f"{Localizer.get().ner_output_log_context}※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※" + "\n")
+                    if isinstance(context, list):
+                        context_text = "\n".join(context)
+                    else:
+                        context_text = str(context)
+                    writer.write(__class__.RE_BLANK.sub("\n", context_text) + "\n")
+                    writer.write("\n")
+        except Exception as e:
+            self.error(f"{Localizer.get().log_read_file_fail}", e)
