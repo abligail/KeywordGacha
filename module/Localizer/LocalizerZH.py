@@ -117,6 +117,8 @@ class LocalizerZH():
     # 应用设置
     app_settings_page_expert_title: str = "专家模式"
     app_settings_page_expert_content: str = "启用此功能后，将显示更多日志信息并提供更多高级设置选项（将在应用重启后生效）"
+    app_settings_page_theme_follow_system_title: str = "跟随系统主题"
+    app_settings_page_theme_follow_system_content: str = "自动跟随系统深色/浅色模式"
     app_settings_page_font_hinting_title: str = "字体优化"
     app_settings_page_font_hinting_content: str = "启用此功能后，应用内 UI 字体的边缘渲染将更加圆润（将在应用重启后生效）"
     app_settings_page_scale_factor_title: str = "全局缩放比例"
@@ -314,19 +316,40 @@ class LocalizerZH():
     # 自定义提示词 - 中文
     custom_prompt_zh_page_head: str = "自定义中文提示词"
     custom_prompt_zh_page_head_desc: str = (
-        "通过自定义提示词可以实现自定义的任务要求"
+        "每个模板独立编辑，开启后会覆盖默认模板"
         "<br>"
-        "注意：前缀与后缀部分固定不可修改，只有 <font color='darkgoldenrod'><b>译文语言设置为中文时</b></font> 才会使用本页中的自定义提示词"
-        ""
-        ""
+        "请保留模板中的占位符（如 {source_language}、{target_language}、{src}、{context}），并保持 JSONLINE 输出格式"
+        "<br>"
+        "只有 <font color='darkgoldenrod'><b>译文语言设置为中文</b></font> 时才会使用本页中的自定义模板"
     )
 
     # 自定义提示词 - 英文
     custom_prompt_en_page_head: str = "自定义英文提示词"
     custom_prompt_en_page_head_desc: str = (
-        "通过自定义提示词可以实现自定义的任务要求"
+        "每个模板独立编辑，开启后会覆盖默认模板"
         "<br>"
-        "注意：前缀与后缀部分固定不可修改，只有 <font color='darkgoldenrod'><b>译文语言设置为非中文时</b></font> 才会使用本页中的自定义提示词"
-        ""
-        ""
+        "请保留模板中的占位符（如 {source_language}、{target_language}、{src}、{context}），并保持 JSONLINE 输出格式"
+        "<br>"
+        "只有 <font color='darkgoldenrod'><b>译文语言设置为非中文</b></font> 时才会使用本页中的自定义模板"
     )
+
+    custom_prompt_template_prefix_title: str = "主流程前缀 (prefix)"
+    custom_prompt_template_prefix_desc: str = "主提示词最前的片段"
+    custom_prompt_template_base_title: str = "主流程基础提示词 (base)"
+    custom_prompt_template_base_desc: str = "主流程的任务要求"
+    custom_prompt_template_suffix_title: str = "主流程后缀 (suffix)"
+    custom_prompt_template_suffix_desc: str = "主流程输出格式，需保持 JSONLINE 结构"
+    custom_prompt_template_extractor_prefix_title: str = "抽取器前缀 (extractor_prefix)"
+    custom_prompt_template_extractor_prefix_desc: str = "抽取器提示词开头（翻译后置时使用）"
+    custom_prompt_template_extractor_base_title: str = "抽取器基础提示词 (extractor_base)"
+    custom_prompt_template_extractor_base_desc: str = "抽取阶段任务要求（不翻译）"
+    custom_prompt_template_extractor_suffix_title: str = "抽取器后缀 (extractor_suffix)"
+    custom_prompt_template_extractor_suffix_desc: str = "抽取器输出格式，需保持 JSONLINE 结构"
+    custom_prompt_template_validator_title: str = "验证器模板 (validator)"
+    custom_prompt_template_validator_desc: str = "候选验证阶段模板，需保持 JSONLINE 输出"
+    custom_prompt_template_gender_title: str = "性别判定模板 (gender)"
+    custom_prompt_template_gender_desc: str = "人名性别判定模板，需保持 JSONLINE 输出"
+    custom_prompt_template_translator_title: str = "翻译器模板 (translator)"
+    custom_prompt_template_translator_desc: str = "翻译阶段模板，需保持 JSONLINE 输出"
+    custom_prompt_template_arbiter_title: str = "复核仲裁模板 (arbiter)"
+    custom_prompt_template_arbiter_desc: str = "复核仲裁模板，需保持 JSONLINE 输出"

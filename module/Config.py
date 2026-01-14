@@ -18,6 +18,7 @@ class Config():
 
         DARK = "DARK"
         LIGHT = "LIGHT"
+        AUTO = "AUTO"
 
     # Application
     theme: str = Theme.LIGHT
@@ -76,10 +77,12 @@ class Config():
     # CustomPromptZHPage
     custom_prompt_zh_enable: bool = False
     custom_prompt_zh_data: str = None
+    custom_prompt_zh_templates: dict[str, str] = dataclasses.field(default_factory = dict)
 
     # CustomPromptENPage
     custom_prompt_en_enable: bool = False
     custom_prompt_en_data: str = None
+    custom_prompt_en_templates: dict[str, str] = dataclasses.field(default_factory = dict)
 
     # 兼容性字段
     deduplication_in_trans: bool = True

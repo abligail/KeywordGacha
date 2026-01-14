@@ -9,8 +9,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication
-from qfluentwidgets import Theme
-from qfluentwidgets import setTheme
+from module.ThemeHelper import apply_theme
 from rich.console import Console
 
 from base.CLIManager import CLIManager
@@ -71,7 +70,7 @@ if __name__ == "__main__":
         version = reader.read().strip()
 
     # 设置主题
-    setTheme(Theme.DARK if config.theme == Config.Theme.DARK else Theme.LIGHT)
+    apply_theme(config)
 
     # 设置应用语言
     Localizer.set_app_language(config.app_language)

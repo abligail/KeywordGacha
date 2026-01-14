@@ -72,6 +72,26 @@ class PromptBuilder(Base):
 
         return prompt_language, source_language, target_language
 
+    def get_custom_template_override(self, prompt_language: BaseLanguage.Enum, name: str) -> str | None:
+        if prompt_language == BaseLanguage.Enum.ZH:
+            enabled = self.config.custom_prompt_zh_enable == True
+            templates = self.config.custom_prompt_zh_templates or {}
+            legacy_data = self.config.custom_prompt_zh_data
+        else:
+            enabled = self.config.custom_prompt_en_enable == True
+            templates = self.config.custom_prompt_en_templates or {}
+            legacy_data = self.config.custom_prompt_en_data
+
+        if enabled == False:
+            return None
+
+        if name in templates and templates.get(name) is not None:
+            return templates.get(name)
+        if name == "base" and legacy_data is not None:
+            return legacy_data
+
+        return None
+
     # 获取主提示词
     def build_main(self, task_type: str | None = None) -> str:
         # 判断提示词语言
@@ -80,31 +100,33 @@ class PromptBuilder(Base):
         with __class__.LOCK:
             # 前缀
             if task_type == "extractor":
-                prefix = __class__.get_optional_template(prompt_language, "extractor_prefix", "prefix")
+                prefix = self.get_custom_template_override(prompt_language, "extractor_prefix")
+                if prefix is None:
+                    prefix = __class__.get_optional_template(prompt_language, "extractor_prefix", "prefix")
             else:
-                prefix = __class__.get_prefix(prompt_language)
+                prefix = self.get_custom_template_override(prompt_language, "prefix")
+                if prefix is None:
+                    prefix = __class__.get_prefix(prompt_language)
 
             # 基本
             if task_type == "extractor":
-                if prompt_language == BaseLanguage.Enum.ZH and self.config.custom_prompt_zh_enable == True:
-                    base = self.config.custom_prompt_zh_data
-                elif prompt_language == BaseLanguage.Enum.EN and self.config.custom_prompt_en_enable == True:
-                    base = self.config.custom_prompt_en_data
-                else:
+                base = self.get_custom_template_override(prompt_language, "extractor_base")
+                if base is None:
                     base = __class__.get_optional_template(prompt_language, "extractor_base", "base")
             else:
-                if prompt_language == BaseLanguage.Enum.ZH and self.config.custom_prompt_zh_enable == True:
-                    base = self.config.custom_prompt_zh_data
-                elif prompt_language == BaseLanguage.Enum.EN and self.config.custom_prompt_en_enable == True:
-                    base = self.config.custom_prompt_en_data
-                else:
+                base = self.get_custom_template_override(prompt_language, "base")
+                if base is None:
                     base = __class__.get_base(prompt_language)
 
             # 后缀
             if task_type == "extractor":
-                suffix = __class__.get_optional_template(prompt_language, "extractor_suffix", "suffix")
+                suffix = self.get_custom_template_override(prompt_language, "extractor_suffix")
+                if suffix is None:
+                    suffix = __class__.get_optional_template(prompt_language, "extractor_suffix", "suffix")
             else:
-                suffix = __class__.get_suffix(prompt_language)
+                suffix = self.get_custom_template_override(prompt_language, "suffix")
+                if suffix is None:
+                    suffix = __class__.get_suffix(prompt_language)
 
         # 组装提示词
         full_prompt = prefix + "\n" + base + "\n" + suffix
@@ -118,10 +140,12 @@ class PromptBuilder(Base):
         prompt_language, source_language, target_language = self.resolve_prompt_language()
 
         with __class__.LOCK:
-            try:
-                template = __class__.get_template(prompt_language, name)
-            except FileNotFoundError:
-                return ""
+            template = self.get_custom_template_override(prompt_language, name)
+            if template is None:
+                try:
+                    template = __class__.get_template(prompt_language, name)
+                except FileNotFoundError:
+                    return ""
 
         replacements = {
             "source_language": source_language,

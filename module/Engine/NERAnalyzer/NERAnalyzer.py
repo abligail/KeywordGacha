@@ -496,7 +496,15 @@ class NERAnalyzer(Base):
             glossary, review_entries = self.apply_multi_agent_pipeline(glossary)
 
         # 排序
-        glossary = sorted(glossary, key = lambda x: x.get("src"))
+        def count_sort_key(entry: dict[str, str | int | list[str]]) -> tuple[int, str]:
+            count = entry.get("count", 0)
+            try:
+                count_value = int(count)
+            except Exception:
+                count_value = 0
+            return (-count_value, str(entry.get("src", "")))
+
+        glossary = sorted(glossary, key = count_sort_key)
 
         # 写入文件
         file_manager = FileManager(self.config)

@@ -15,9 +15,7 @@ from qfluentwidgets import MessageBox
 from qfluentwidgets import NavigationAvatarWidget
 from qfluentwidgets import NavigationItemPosition
 from qfluentwidgets import NavigationPushButton
-from qfluentwidgets import Theme
 from qfluentwidgets import isDarkTheme
-from qfluentwidgets import setTheme
 from qfluentwidgets import setThemeColor
 
 from base.Base import Base
@@ -35,6 +33,7 @@ from frontend.Setting.ExpertSettingsPage import ExpertSettingsPage
 from frontend.TaskPage import TaskPage
 from module.Config import Config
 from module.Localizer.Localizer import Localizer
+from module.ThemeHelper import apply_theme
 
 class AppFluentWindow(FluentWindow, Base):
 
@@ -122,12 +121,11 @@ class AppFluentWindow(FluentWindow, Base):
     def switch_theme(self) -> None:
         config = Config().load()
         if not isDarkTheme():
-            setTheme(Theme.DARK)
             config.theme = Config.Theme.DARK
         else:
-            setTheme(Theme.LIGHT)
             config.theme = Config.Theme.LIGHT
         config.save()
+        apply_theme(config)
 
     # 切换语言
     def swicth_language(self) -> None:

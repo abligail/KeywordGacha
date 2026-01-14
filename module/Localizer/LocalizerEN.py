@@ -117,6 +117,8 @@ class LocalizerEN(LocalizerZH):
     # 应用设置
     app_settings_page_expert_title: str = "Expert Mode"
     app_settings_page_expert_content: str = "Enabling this feature will display more log information and provide more advanced setting options (takes effect after app restart)"
+    app_settings_page_theme_follow_system_title: str = "Follow System Theme"
+    app_settings_page_theme_follow_system_content: str = "Automatically switch between light and dark based on system settings"
     app_settings_page_font_hinting_title: str = "Font Hinting"
     app_settings_page_font_hinting_content: str = "Enabling this feature will render the edges of UI fonts more smoothly (takes effect after app restart)"
     app_settings_page_scale_factor_title: str = "Global Scale Factor"
@@ -310,19 +312,40 @@ class LocalizerEN(LocalizerZH):
     # 自定义提示词 - 中文
     custom_prompt_zh_page_head: str = "Custom Chinese Prompts (SakuraLLM model not supported)"
     custom_prompt_zh_page_head_desc: str = (
-        "Add extra translation requirements such as story settings and writing styles via custom prompts"
+        "Each template can be edited separately and will override the defaults when enabled"
         "<br>"
-        "Note: The prefix and suffix are fixed and cannot be modified"
+        "Keep placeholders (e.g. {source_language}, {target_language}, {src}, {context}) and the JSONLINE output format"
         "<br>"
-        "The custom prompts on this page will only be used when the <font color='darkgoldenrod'><b>translation language is set to Chinese</b></font>"
+        "These templates are used only when the <font color='darkgoldenrod'><b>translation language is set to Chinese</b></font>"
     )
 
     # 自定义提示词 - 英文
     custom_prompt_en_page_head: str = "Custom English Prompts (SakuraLLM model not supported)"
     custom_prompt_en_page_head_desc: str = (
-        "Add extra translation requirements such as story settings and writing styles via custom prompts"
+        "Each template can be edited separately and will override the defaults when enabled"
         "<br>"
-        "Note: The prefix and suffix are fixed and cannot be modified"
+        "Keep placeholders (e.g. {source_language}, {target_language}, {src}, {context}) and the JSONLINE output format"
         "<br>"
-        "The custom prompts on this page will only be used when the <font color='darkgoldenrod'><b>translation language is set to non-Chinese</b></font>"
+        "These templates are used only when the <font color='darkgoldenrod'><b>translation language is set to non-Chinese</b></font>"
     )
+
+    custom_prompt_template_prefix_title: str = "Main Prefix (prefix)"
+    custom_prompt_template_prefix_desc: str = "Placed before the main prompt"
+    custom_prompt_template_base_title: str = "Main Base Prompt (base)"
+    custom_prompt_template_base_desc: str = "Main task requirements"
+    custom_prompt_template_suffix_title: str = "Main Suffix (suffix)"
+    custom_prompt_template_suffix_desc: str = "Output format for the main prompt; keep JSONLINE"
+    custom_prompt_template_extractor_prefix_title: str = "Extractor Prefix (extractor_prefix)"
+    custom_prompt_template_extractor_prefix_desc: str = "Extractor header (used when post-translation is enabled)"
+    custom_prompt_template_extractor_base_title: str = "Extractor Base Prompt (extractor_base)"
+    custom_prompt_template_extractor_base_desc: str = "Extractor requirements (no translation)"
+    custom_prompt_template_extractor_suffix_title: str = "Extractor Suffix (extractor_suffix)"
+    custom_prompt_template_extractor_suffix_desc: str = "Extractor output format; keep JSONLINE"
+    custom_prompt_template_validator_title: str = "Validator Template (validator)"
+    custom_prompt_template_validator_desc: str = "Validator stage template; keep JSONLINE output"
+    custom_prompt_template_gender_title: str = "Gender Template (gender)"
+    custom_prompt_template_gender_desc: str = "Gender stage template; keep JSONLINE output"
+    custom_prompt_template_translator_title: str = "Translator Template (translator)"
+    custom_prompt_template_translator_desc: str = "Translator stage template; keep JSONLINE output"
+    custom_prompt_template_arbiter_title: str = "Arbiter Template (arbiter)"
+    custom_prompt_template_arbiter_desc: str = "Arbiter stage template; keep JSONLINE output"

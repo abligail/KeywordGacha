@@ -1,47 +1,59 @@
-import os
-from functools import partial
-
-from PyQt5.QtCore import QPoint
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWidgets import QLayout
 from PyQt5.QtWidgets import QVBoxLayout
+from PyQt5.QtWidgets import QHBoxLayout
 
 from qfluentwidgets import Action
-from qfluentwidgets import RoundMenu
 from qfluentwidgets import FluentIcon
 from qfluentwidgets import MessageBox
 from qfluentwidgets import FluentWindow
-from qfluentwidgets import CommandButton
 from qfluentwidgets import PlainTextEdit
+from qfluentwidgets import CardWidget
+from qfluentwidgets import CaptionLabel
+from qfluentwidgets import StrongBodyLabel
+from qfluentwidgets import CommandBar
+from qfluentwidgets import SingleDirectionScrollArea
 
 from base.Base import Base
 from base.BaseLanguage import BaseLanguage
 from module.Config import Config
 from module.Localizer.Localizer import Localizer
 from module.PromptBuilder import PromptBuilder
-from widget.EmptyCard import EmptyCard
-from widget.CommandBarCard import CommandBarCard
+from widget.Separator import Separator
 from widget.SwitchButtonCard import SwitchButtonCard
 
+
 class CustomPromptPage(QWidget, Base):
+
+    TEMPLATE_ITEMS = [
+        ("prefix", "custom_prompt_template_prefix_title", "custom_prompt_template_prefix_desc"),
+        ("base", "custom_prompt_template_base_title", "custom_prompt_template_base_desc"),
+        ("suffix", "custom_prompt_template_suffix_title", "custom_prompt_template_suffix_desc"),
+        ("extractor_prefix", "custom_prompt_template_extractor_prefix_title", "custom_prompt_template_extractor_prefix_desc"),
+        ("extractor_base", "custom_prompt_template_extractor_base_title", "custom_prompt_template_extractor_base_desc"),
+        ("extractor_suffix", "custom_prompt_template_extractor_suffix_title", "custom_prompt_template_extractor_suffix_desc"),
+        ("validator", "custom_prompt_template_validator_title", "custom_prompt_template_validator_desc"),
+        ("gender", "custom_prompt_template_gender_title", "custom_prompt_template_gender_desc"),
+        ("translator", "custom_prompt_template_translator_title", "custom_prompt_template_translator_desc"),
+        ("arbiter", "custom_prompt_template_arbiter_title", "custom_prompt_template_arbiter_desc"),
+    ]
 
     def __init__(self, text: str, window: FluentWindow, language: BaseLanguage.Enum) -> None:
         super().__init__(window)
         self.setObjectName(text.replace(" ", "-"))
+        self.fluent_window = window
 
+        self.language = language
         if language == BaseLanguage.Enum.ZH:
-            self.language = language
             self.base_key = "custom_prompt_zh"
-            self.preset_path = "resource/custom_prompt/zh"
         else:
-            self.language = language
             self.base_key = "custom_prompt_en"
-            self.preset_path = "resource/custom_prompt/en"
 
         # 载入并保存默认配置
         config = Config().load()
-        if getattr(config, f"{self.base_key}_data", None) == None:
-            setattr(config, f"{self.base_key}_data", PromptBuilder(config).get_base(language))
+        self.ensure_base_template(config)
         config.save()
 
         # 设置主容器
@@ -49,10 +61,77 @@ class CustomPromptPage(QWidget, Base):
         self.root.setSpacing(8)
         self.root.setContentsMargins(24, 24, 24, 24) # 左、上、右、下
 
+        # 创建滚动区域的内容容器
+        scroll_area_vbox_widget = QWidget()
+        scroll_area_vbox = QVBoxLayout(scroll_area_vbox_widget)
+        scroll_area_vbox.setContentsMargins(0, 0, 0, 0)
+        scroll_area_vbox.setSpacing(8)
+
+        # 创建滚动区域
+        scroll_area = SingleDirectionScrollArea(orient = Qt.Orientation.Vertical)
+        scroll_area.setWidget(scroll_area_vbox_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.enableTransparentBackground()
+
+        # 将滚动区域添加到父布局
+        self.root.addWidget(scroll_area)
+
         # 添加控件
-        self.add_widget_header(self.root, config, window)
-        self.add_widget_body(self.root, config, window)
-        self.add_widget_footer(self.root, config, window)
+        self.add_widget_header(scroll_area_vbox, config, window)
+        self.add_widget_body(scroll_area_vbox, config, window)
+
+        # 填充
+        scroll_area_vbox.addStretch(1)
+
+    def ensure_base_template(self, config: Config) -> None:
+        templates = self.get_templates(config)
+        base_value = templates.get("base")
+        legacy_value = getattr(config, f"{self.base_key}_data", None)
+
+        if base_value is None:
+            if legacy_value is not None:
+                templates["base"] = legacy_value
+            else:
+                templates["base"] = PromptBuilder(config).get_base(self.language)
+
+        if legacy_value is None:
+            setattr(config, f"{self.base_key}_data", templates.get("base"))
+
+    def get_templates(self, config: Config) -> dict[str, str]:
+        templates = getattr(config, f"{self.base_key}_templates", None)
+        if templates is None:
+            templates = {}
+            setattr(config, f"{self.base_key}_templates", templates)
+        return templates
+
+    def get_default_template(self, name: str) -> str:
+        if name == "prefix":
+            return PromptBuilder.get_prefix(self.language)
+        if name == "base":
+            return PromptBuilder.get_base(self.language)
+        if name == "suffix":
+            return PromptBuilder.get_suffix(self.language)
+        if name == "extractor_prefix":
+            return PromptBuilder.get_optional_template(self.language, "extractor_prefix", "prefix")
+        if name == "extractor_base":
+            return PromptBuilder.get_optional_template(self.language, "extractor_base", "base")
+        if name == "extractor_suffix":
+            return PromptBuilder.get_optional_template(self.language, "extractor_suffix", "suffix")
+
+        try:
+            return PromptBuilder.get_template(self.language, name)
+        except FileNotFoundError:
+            return ""
+
+    def get_template_value(self, config: Config, name: str) -> str:
+        templates = self.get_templates(config)
+        if name in templates and templates.get(name) is not None:
+            return templates.get(name)
+        if name == "base":
+            legacy_value = getattr(config, f"{self.base_key}_data", None)
+            if legacy_value is not None:
+                return legacy_value
+        return self.get_default_template(name)
 
     # 头部
     def add_widget_header(self, parent: QLayout, config: Config, window: FluentWindow) -> None:
@@ -78,134 +157,97 @@ class CustomPromptPage(QWidget, Base):
 
     # 主体
     def add_widget_body(self, parent: QLayout, config: Config, window: FluentWindow) -> None:
-        self.prefix_body = EmptyCard("", PromptBuilder(config).get_prefix(self.language))
-        self.prefix_body.remove_title()
-        parent.addWidget(self.prefix_body)
-
-        self.main_text = PlainTextEdit(self)
-        self.main_text.setPlainText(getattr(config, f"{self.base_key}_data",))
-        parent.addWidget(self.main_text)
-
-        self.suffix_body = EmptyCard("", PromptBuilder(config).get_suffix(self.language).replace("\n", ""))
-        self.suffix_body.remove_title()
-        parent.addWidget(self.suffix_body)
-
-    # 底部
-    def add_widget_footer(self, parent: QLayout, config: Config, window: FluentWindow) -> None:
-        self.command_bar_card = CommandBarCard()
-        parent.addWidget(self.command_bar_card)
-
-        # 添加命令
-        self.add_command_bar_action_save(self.command_bar_card, config, window)
-        self.add_command_bar_action_preset(self.command_bar_card, config, window)
-
-    # 保存
-    def add_command_bar_action_save(self, parent: CommandBarCard, config: Config, window: FluentWindow) -> None:
-
-        def triggered() -> None:
-            # 更新配置文件
-            config = Config().load()
-            setattr(config, f"{self.base_key}_data", self.main_text.toPlainText().strip())
-            config.save()
-
-            # 弹出提示
-            self.emit(Base.Event.TOAST, {
-                "type": Base.ToastType.SUCCESS,
-                "message": Localizer.get().quality_save_toast,
-            })
-
-        parent.add_action(
-            Action(FluentIcon.SAVE, Localizer.get().quality_save, parent, triggered = triggered),
-        )
-
-    # 预设
-    def add_command_bar_action_preset(self, parent: CommandBarCard, config: Config, window: FluentWindow) -> None:
-
-        widget: CommandButton = None
-
-        def load_preset() -> list[str]:
-            filenames: list[str] = []
-
-            try:
-                for root, _, filenames in os.walk(f"{self.preset_path}"):
-                    filenames = [v.lower().removesuffix(".txt") for v in filenames if v.lower().endswith(".txt")]
-            except Exception:
-                pass
-
-            return filenames
-
-        def reset() -> None:
-            message_box = MessageBox(Localizer.get().alert, Localizer.get().quality_reset_alert, window)
-            message_box.yesButton.setText(Localizer.get().confirm)
-            message_box.cancelButton.setText(Localizer.get().cancel)
-
-            if not message_box.exec():
-                return
-
-            # 更新配置文件
-            config = Config().load()
-            setattr(config, f"{self.base_key}_data", PromptBuilder(config).get_base(self.language))
-            config.save()
-
-            # 更新 UI
-            self.main_text.setPlainText(
-                getattr(config, f"{self.base_key}_data"),
+        for name, title_key, desc_key in self.TEMPLATE_ITEMS:
+            self.add_template_card(
+                parent = parent,
+                config = config,
+                name = name,
+                title = getattr(Localizer.get(), title_key),
+                description = getattr(Localizer.get(), desc_key),
             )
 
-            # 弹出提示
-            self.emit(Base.Event.TOAST, {
-                "type": Base.ToastType.SUCCESS,
-                "message": Localizer.get().quality_reset_toast,
-            })
+    def add_template_card(self, parent: QLayout, config: Config, name: str, title: str, description: str) -> None:
+        card = CardWidget(self)
+        card.setBorderRadius(4)
+        root = QVBoxLayout(card)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(8)
 
-        def apply_preset(filename: str) -> None:
-            path: str = f"{self.preset_path}/{filename}.txt"
+        head_container = QWidget(card)
+        head_hbox = QHBoxLayout(head_container)
+        head_hbox.setContentsMargins(0, 0, 0, 0)
+        head_hbox.setSpacing(8)
 
-            prompt: str = ""
-            try:
-                with open(path, "r", encoding = "utf-8-sig") as reader:
-                    prompt = reader.read().strip()
-            except Exception:
-                pass
+        text_vbox = QVBoxLayout()
+        text_vbox.setSpacing(2)
+        title_label = StrongBodyLabel(title, card)
+        description_label = CaptionLabel(description, card)
+        description_label.setTextColor(QColor(96, 96, 96), QColor(160, 160, 160))
+        text_vbox.addWidget(title_label)
+        text_vbox.addWidget(description_label)
+        head_hbox.addLayout(text_vbox)
+        head_hbox.addStretch(1)
+        root.addWidget(head_container)
 
-            # 更新配置文件
-            config = Config().load()
-            setattr(config, f"{self.base_key}_data", prompt)
-            config.save()
+        root.addWidget(Separator(card))
 
-            # 更新 UI
-            self.main_text.setPlainText(
-                getattr(config, f"{self.base_key}_data"),
-            )
+        text_edit = PlainTextEdit(card)
+        text_edit.setPlainText(self.get_template_value(config, name))
+        text_edit.setMinimumHeight(160)
+        root.addWidget(text_edit)
 
-            # 弹出提示
-            self.emit(Base.Event.TOAST, {
-                "type": Base.ToastType.SUCCESS,
-                "message": Localizer.get().quality_import_toast,
-            })
-
-        def triggered() -> None:
-            menu = RoundMenu("", widget)
-            menu.addAction(
-                Action(
-                    FluentIcon.CLEAR_SELECTION,
-                    Localizer.get().quality_reset,
-                    triggered = reset,
-                )
-            )
-            for v in load_preset():
-                menu.addAction(
-                    Action(
-                        FluentIcon.EDIT,
-                        v,
-                        triggered = partial(apply_preset, v),
-                    )
-                )
-            menu.exec(widget.mapToGlobal(QPoint(0, -menu.height())))
-
-        widget = parent.add_action(Action(
-            FluentIcon.EXPRESSIVE_INPUT_ENTRY,
-            Localizer.get().quality_preset,
-            parent = parent,
-            triggered = triggered
+        command_bar = CommandBar(card)
+        command_bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        command_bar.addAction(Action(
+            FluentIcon.SAVE,
+            Localizer.get().quality_save,
+            card,
+            triggered = lambda: self.save_template(name, text_edit.toPlainText()),
         ))
+        command_bar.addAction(Action(
+            FluentIcon.CLEAR_SELECTION,
+            Localizer.get().quality_reset,
+            card,
+            triggered = lambda: self.reset_template(name, text_edit),
+        ))
+        root.addWidget(command_bar)
+
+        parent.addWidget(card)
+
+    def save_template(self, name: str, text: str) -> None:
+        config = Config().load()
+        templates = self.get_templates(config)
+        templates[name] = text.strip()
+        setattr(config, f"{self.base_key}_templates", templates)
+        if name == "base":
+            setattr(config, f"{self.base_key}_data", templates[name])
+        config.save()
+
+        self.emit(Base.Event.TOAST, {
+            "type": Base.ToastType.SUCCESS,
+            "message": Localizer.get().quality_save_toast,
+        })
+
+    def reset_template(self, name: str, text_edit: PlainTextEdit) -> None:
+        message_box = MessageBox(Localizer.get().alert, Localizer.get().quality_reset_alert, self.fluent_window)
+        message_box.yesButton.setText(Localizer.get().confirm)
+        message_box.cancelButton.setText(Localizer.get().cancel)
+
+        if not message_box.exec():
+            return
+
+        default_value = self.get_default_template(name)
+        text_edit.setPlainText(default_value)
+
+        config = Config().load()
+        templates = self.get_templates(config)
+        templates[name] = default_value
+        setattr(config, f"{self.base_key}_templates", templates)
+        if name == "base":
+            setattr(config, f"{self.base_key}_data", default_value)
+        config.save()
+
+        self.emit(Base.Event.TOAST, {
+            "type": Base.ToastType.SUCCESS,
+            "message": Localizer.get().quality_reset_toast,
+        })

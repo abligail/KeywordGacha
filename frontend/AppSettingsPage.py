@@ -8,11 +8,13 @@ from PyQt5.QtWidgets import QVBoxLayout
 from qfluentwidgets import MessageBox
 from qfluentwidgets import FluentWindow
 from qfluentwidgets import SwitchButton
+from qfluentwidgets import isDarkTheme
 from qfluentwidgets import SingleDirectionScrollArea
 
 from base.Base import Base
 from module.Config import Config
 from module.Localizer.Localizer import Localizer
+from module.ThemeHelper import apply_theme
 from widget.ComboBoxCard import ComboBoxCard
 from widget.LineEditCard import LineEditCard
 from widget.SwitchButtonCard import SwitchButtonCard
@@ -47,6 +49,7 @@ class AppSettingsPage(QWidget, Base):
 
         # 添加控件
         self.add_widget_expert_mode(scroll_area_vbox, config, window)
+        self.add_widget_theme_follow_system(scroll_area_vbox, config, window)
         self.add_widget_font_hinting(scroll_area_vbox, config, window)
         self.add_widget_scale_factor(scroll_area_vbox, config, window)
         self.add_widget_proxy(scroll_area_vbox, config, window)
@@ -110,6 +113,32 @@ class AppSettingsPage(QWidget, Base):
             SwitchButtonCard(
                 title = Localizer.get().app_settings_page_font_hinting_title,
                 description = Localizer.get().app_settings_page_font_hinting_content,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 跟随系统主题
+    def add_widget_theme_follow_system(self, parent: QLayout, config: Config, window: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                str(config.theme).upper() == str(Config.Theme.AUTO)
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            if widget.get_switch_button().isChecked():
+                config.theme = Config.Theme.AUTO
+            else:
+                config.theme = Config.Theme.DARK if isDarkTheme() else Config.Theme.LIGHT
+            config.save()
+            apply_theme(config)
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().app_settings_page_theme_follow_system_title,
+                description = Localizer.get().app_settings_page_theme_follow_system_content,
                 init = init,
                 checked_changed = checked_changed,
             )
