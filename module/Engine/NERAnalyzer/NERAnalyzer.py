@@ -25,6 +25,7 @@ from module.FakeNameHelper import FakeNameHelper
 from module.File.FileManager import FileManager
 from module.Filter.LanguageFilter import LanguageFilter
 from module.Filter.RuleFilter import RuleFilter
+from module.Filter.TitleFilter import TitleFilter
 from module.Localizer.Localizer import Localizer
 from module.Normalizer import Normalizer
 from module.ProgressBar import ProgressBar
@@ -67,6 +68,19 @@ class NERAnalyzer(Base):
         ("あたし", 1),
         ("くん", 1),
         ("ちゃん", 1),
+    )
+    VALIDATOR_RETRY_KEYWORDS: tuple[str, ...] = (
+        "证据不足",
+        "上下文不足",
+        "证据不够",
+        "信息不足",
+        "证据冲突",
+        "insufficient",
+        "not enough",
+        "ambiguous",
+        "uncertain",
+        "conflict",
+        "low confidence",
     )
 
     # 类变量
@@ -691,6 +705,7 @@ class NERAnalyzer(Base):
                     "text": highlighted,
                     "score": self.score_snippet(highlighted),
                     "order": snippet_indices[0] if snippet_indices != [] else idx,
+                    "file": file_path,
                 }
             )
 
@@ -708,21 +723,71 @@ class NERAnalyzer(Base):
             return "（无上下文）" if prompt_language == BaseLanguage.Enum.ZH else "No context."
 
         budget = max(0, int(budget))
+        long_budget = max(0, int(self.config.multi_agent_context_budget_long))
+        is_long = long_budget > 0 and budget >= long_budget
+        window = max(0, int(self.config.multi_agent_context_window))
+        min_distance = max(1, window * 2 + 1)
+        similarity_threshold = 0.88
+        if is_long == True:
+            min_distance = max(1, window)
+            similarity_threshold = 0.95
+
         sorted_snippets = sorted(
             snippets,
             key = lambda x: (-int(x.get("score", 0)), int(x.get("order", 0))),
         )
 
         blocks: list[str] = []
+        selected: list[dict[str, str | int]] = []
         used = 0
-        for idx, snippet in enumerate(sorted_snippets, start = 1):
-            block = f"[S{idx:03d}]\n{snippet.get('text', '')}"
+        for snippet in sorted_snippets:
+            text = str(snippet.get("text", ""))
+            if text == "":
+                continue
+            if self.is_snippet_too_similar(text, selected, similarity_threshold):
+                continue
+            if self.is_snippet_too_close(snippet, selected, min_distance):
+                continue
+
+            block = f"[S{len(blocks) + 1:03d}]\n{text}"
             if blocks != [] and used + len(block) > budget:
                 break
             blocks.append(block)
+            selected.append(snippet)
             used += len(block)
 
+        if blocks == [] and sorted_snippets != []:
+            text = str(sorted_snippets[0].get("text", ""))
+            blocks.append(f"[S001]\n{text}")
+
         return "\n\n".join(blocks)
+
+    def is_snippet_too_similar(self, text: str, selected: list[dict[str, str | int]], threshold: float) -> bool:
+        for item in selected:
+            other = str(item.get("text", ""))
+            if other == "":
+                continue
+            if TextHelper.check_similarity_by_jaccard(text, other) >= threshold:
+                return True
+        return False
+
+    def is_snippet_too_close(self, snippet: dict[str, str | int], selected: list[dict[str, str | int]], min_distance: int) -> bool:
+        try:
+            order = int(snippet.get("order", 0))
+        except Exception:
+            order = 0
+        file_path = str(snippet.get("file", ""))
+
+        for item in selected:
+            if file_path != "" and file_path != str(item.get("file", "")):
+                continue
+            try:
+                other = int(item.get("order", 0))
+            except Exception:
+                other = 0
+            if abs(order - other) <= min_distance:
+                return True
+        return False
 
     def get_gender_labels(self) -> dict[str, str]:
         if self.config.target_language == BaseLanguage.Enum.ZH:
@@ -738,8 +803,20 @@ class NERAnalyzer(Base):
                 "unknown": "Name of Unknown Gender",
             }
 
+    def is_surname(self, info: str) -> bool:
+        if not isinstance(info, str):
+            return False
+        text = info.strip().lower()
+        if text == "":
+            return False
+        if "姓氏" in text:
+            return True
+        return "surname" in text or "family name" in text
+
     def is_person_name(self, info: str) -> bool:
         if not isinstance(info, str):
+            return False
+        if self.is_surname(info) == True:
             return False
         text = info.strip().lower()
         return "人名" in text or "name" in text
@@ -781,6 +858,26 @@ class NERAnalyzer(Base):
             return True
         return result.get("keep") is None
 
+    def should_retry_validator(
+        self,
+        entry: dict[str, str | int | list[str]],
+        result: dict[str, str | bool] | None,
+    ) -> bool:
+        if self.is_validator_result_invalid(result) == True:
+            return True
+        if not isinstance(result, dict):
+            return False
+
+        reason = result.get("reason", "")
+        reason_text = reason.strip().lower() if isinstance(reason, str) else str(reason).strip().lower()
+        if reason_text == "":
+            return False
+        if any(token in reason_text for token in __class__.VALIDATOR_RETRY_KEYWORDS) == False:
+            return False
+
+        snippets = entry.get("snippets", [])
+        return isinstance(snippets, list) and len(snippets) > 0
+
     def is_gender_result_invalid(self, result: dict[str, str] | None) -> bool:
         if not isinstance(result, dict):
             return True
@@ -802,6 +899,46 @@ class NERAnalyzer(Base):
             return ""
         return text.strip()
 
+    def pick_best_translation(
+        self,
+        entry: dict[str, str | int | list[str]],
+        candidates: list[str],
+        existing: str,
+    ) -> str:
+        if candidates == []:
+            return existing
+
+        src = str(entry.get("src", ""))
+        dst_choices = entry.get("dst_choices", set())
+        if isinstance(dst_choices, set):
+            choice_set = {self.normalize_translation(v) for v in dst_choices if isinstance(v, str) and v != ""}
+        elif isinstance(dst_choices, list):
+            choice_set = {self.normalize_translation(v) for v in dst_choices if isinstance(v, str) and v != ""}
+        else:
+            choice_set = set()
+
+        scored: list[tuple[int, int, str]] = []
+        for candidate in candidates:
+            candidate = self.normalize_translation(candidate)
+            if candidate == "":
+                continue
+            score = 0
+            if existing != "" and candidate == existing:
+                score += 3
+            if candidate in choice_set:
+                score += 2
+            if candidate == src:
+                score -= 3
+            if TextHelper.get_display_lenght(candidate) > 32:
+                score -= 1
+            scored.append((score, TextHelper.get_display_lenght(candidate), candidate))
+
+        if scored == []:
+            return existing
+
+        scored.sort(key = lambda x: (-x[0], x[1], x[2]))
+        return scored[0][2]
+
     def apply_multi_agent_pipeline(self, glossary: list[dict[str, str | int | list[str]]]) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
         if glossary == []:
             return glossary, []
@@ -809,6 +946,10 @@ class NERAnalyzer(Base):
         prompt_builder = PromptBuilder(self.config)
         prompt_language, _, _ = prompt_builder.resolve_prompt_language()
         max_workers, rpm_threshold = self.initialize_max_workers()
+
+        title_review_entries: list[dict[str, str]] = []
+        if self.config.multi_agent_title_filter_enable == True:
+            glossary, title_review_entries = self.apply_title_filter(glossary, prompt_language)
 
         self.reset_agent_usage()
         glossary, validator_review_entries = self.run_validator(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
@@ -821,7 +962,7 @@ class NERAnalyzer(Base):
             self.reset_agent_usage()
             glossary, translator_review_entries = self.run_translator(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
             self.flush_agent_usage()
-        review_entries = self.merge_review_entries(validator_review_entries, gender_review_entries, translator_review_entries)
+        review_entries = self.merge_review_entries(title_review_entries, validator_review_entries, gender_review_entries, translator_review_entries)
 
         for entry in glossary:
             entry.pop("snippets", None)
@@ -830,6 +971,36 @@ class NERAnalyzer(Base):
             entry.pop("translation_conflict", None)
 
         return glossary, review_entries
+
+    def apply_title_filter(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        prompt_language: BaseLanguage.Enum,
+    ) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
+        if glossary == []:
+            return glossary, []
+        if self.config.multi_agent_title_filter_enable != True:
+            return glossary, []
+
+        budget = max(0, int(self.config.multi_agent_context_budget))
+        kept: list[dict[str, str | int | list[str]]] = []
+        review_entries: list[dict[str, str]] = []
+
+        for entry in glossary:
+            if TitleFilter.filter(str(entry.get("src", ""))):
+                context = self.format_snippet_context(entry.get("snippets", []), budget, prompt_language)
+                review_entries.append(
+                    self.build_validator_review_entry(
+                        entry,
+                        prompt_language,
+                        "title_filtered",
+                        context,
+                    )
+                )
+            else:
+                kept.append(entry)
+
+        return kept, review_entries
 
     def reset_agent_usage(self) -> None:
         with self.agent_usage_lock:
@@ -950,8 +1121,6 @@ class NERAnalyzer(Base):
             if isinstance(decision, dict):
                 if decision.get("keep") is False:
                     continue
-                if decision.get("reason"):
-                    entry["validator_reason"] = decision.get("reason")
                 if decision.get("keep") is None:
                     review_entries.append(
                         self.build_validator_review_entry(
@@ -961,6 +1130,9 @@ class NERAnalyzer(Base):
                             str(decision.get("context", "")),
                         )
                     )
+                    continue
+                if decision.get("reason"):
+                    entry["validator_reason"] = decision.get("reason")
                 kept.append(entry)
             else:
                 review_entries.append(
@@ -971,7 +1143,6 @@ class NERAnalyzer(Base):
                         "",
                     )
                 )
-                kept.append(entry)
 
         return kept, review_entries
 
@@ -1013,30 +1184,42 @@ class NERAnalyzer(Base):
 
         review_entries: list[dict[str, str]] = []
         labels = self.get_gender_labels()
+        min_high_count = max(0, int(self.config.multi_agent_gender_high_confidence_min_count))
+        allow_low_without_review = self.config.multi_agent_review_output != True
+
+        kept: list[dict[str, str | int | list[str]]] = []
         for entry in glossary:
-            result = results.get(entry.get("src"))
-            if result is None:
+            if self.is_person_name(entry.get("info", "")) != True:
+                kept.append(entry)
                 continue
 
-            gender = self.map_gender_label(result.get("gender", ""))
-            confidence = result.get("confidence", "")
-            evidence = result.get("evidence", "")
-            context = result.get("context", "")
-            review_reason = ""
-            evidence_valid = self.is_evidence_valid(evidence)
-
-            if gender == "":
+            result = results.get(entry.get("src"))
+            if result is None:
                 gender = labels.get("male")
                 confidence = "low"
+                evidence = ""
+                context = ""
                 review_reason = "invalid_output"
-            elif confidence == "":
-                confidence = "low"
-                review_reason = "invalid_output"
+            else:
+                gender = self.map_gender_label(result.get("gender", ""))
+                confidence = result.get("confidence", "")
+                evidence = result.get("evidence", "")
+                context = result.get("context", "")
+                review_reason = ""
+                evidence_valid = self.is_evidence_valid(evidence)
 
-            if evidence_valid == False:
-                confidence = "low"
-                if review_reason == "":
-                    review_reason = "invalid_evidence"
+                if gender == "":
+                    gender = labels.get("male")
+                    confidence = "low"
+                    review_reason = "invalid_output"
+                elif confidence == "":
+                    confidence = "low"
+                    review_reason = "invalid_output"
+
+                if evidence_valid == False:
+                    confidence = "low"
+                    if review_reason == "":
+                        review_reason = "invalid_evidence"
 
             entry["info"] = gender
             info_choices = entry.get("info_choices")
@@ -1050,7 +1233,18 @@ class NERAnalyzer(Base):
                     self.build_review_entry(entry, prompt_language, review_reason, evidence, context)
                 )
 
-        return glossary, review_entries
+                count = entry.get("count", 0)
+                try:
+                    count_value = int(count)
+                except Exception:
+                    count_value = 0
+                require_high = min_high_count > 0 and count_value >= min_high_count
+                if require_high == True and allow_low_without_review == False:
+                    continue
+
+            kept.append(entry)
+
+        return kept, review_entries
 
     def run_translator(
         self,
@@ -1066,6 +1260,7 @@ class NERAnalyzer(Base):
         task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
         results: dict[str, dict[str, str]] = {}
 
+        self.emit_stage_progress("translating", 0, len(glossary))
         with ProgressBar(transient = True) as progress:
             pid = progress.new()
             with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
@@ -1074,11 +1269,14 @@ class NERAnalyzer(Base):
                     task_limiter.wait()
                     futures.append(executor.submit(self.request_translator, entry, prompt_builder, prompt_language))
 
+                completed_count = 0
                 for future in concurrent.futures.as_completed(futures):
                     result = future.result()
                     if isinstance(result, dict) and result.get("src"):
                         results[result.get("src")] = result
+                    completed_count += 1
                     progress.update(pid, advance = 1, total = len(futures))
+                    self.emit_stage_progress("translating", completed_count, len(futures))
 
         review_entries: list[dict[str, str]] = []
         for entry in glossary:
@@ -1112,32 +1310,48 @@ class NERAnalyzer(Base):
 
             translated = self.convert_chinese_character_form(translated)
             existing = self.normalize_translation(entry.get("dst", ""))
-            entry["dst"] = translated
             conflict = bool(result.get("translation_conflict"))
             candidates = result.get("translation_candidates")
-            if conflict == True or (existing != "" and translated != existing):
-                entry["translation_conflict"] = True
-                merged_candidates: list[str] = []
-                if isinstance(candidates, list):
-                    merged_candidates.extend([v for v in candidates if isinstance(v, str) and v != ""])
-                if existing != "":
-                    merged_candidates.append(existing)
+
+            merged_candidates: list[str] = []
+            if isinstance(candidates, list):
+                merged_candidates.extend([self.normalize_translation(v) for v in candidates if isinstance(v, str) and v.strip() != ""])
+            if existing != "":
+                merged_candidates.append(existing)
+            if translated != "":
                 merged_candidates.append(translated)
-                entry["translation_candidates"] = list(dict.fromkeys(merged_candidates))
+            merged_candidates = list(dict.fromkeys([v for v in merged_candidates if v != ""]))
+
+            chosen = self.pick_best_translation(entry, merged_candidates, existing)
+            if chosen == "":
+                chosen = translated if translated != "" else existing
+            entry["dst"] = chosen
+
+            if conflict == True or (existing != "" and translated != "" and existing != translated) or len(merged_candidates) > 1:
+                entry["translation_conflict"] = True
+                entry["translation_candidates"] = merged_candidates
+                review_context = result.get("context", "")
+                if chosen not in ("", translated, existing):
+                    review_context = f"picked={chosen}" if review_context == "" else f"picked={chosen}\n\n{review_context}"
                 review_entries.append(
                     self.build_translation_review_entry(
                         entry,
                         prompt_language,
                         "conflict",
                         translated,
-                        result.get("context", ""),
+                        review_context,
                         existing,
                     )
                 )
 
             dst_choices = entry.get("dst_choices")
             if isinstance(dst_choices, set):
-                dst_choices.add(translated)
+                if chosen != "":
+                    dst_choices.add(chosen)
+                if translated != "" and translated != chosen:
+                    dst_choices.add(translated)
+                if existing != "" and existing != chosen:
+                    dst_choices.add(existing)
                 dst_choices.discard("")
 
         return glossary, review_entries
@@ -1264,7 +1478,7 @@ class NERAnalyzer(Base):
         long_budget = max(0, int(self.config.multi_agent_context_budget_long))
 
         short_result = self.request_validator_once(entry, prompt_builder, prompt_language, short_budget)
-        if self.is_validator_result_invalid(short_result) == True:
+        if self.should_retry_validator(entry, short_result) == True:
             retry_budget = long_budget if long_budget > short_budget else short_budget
             long_result = self.request_validator_once(entry, prompt_builder, prompt_language, retry_budget)
             return self.pick_validator_result(short_result, long_result)
@@ -1555,6 +1769,8 @@ class NERAnalyzer(Base):
                 reason = "验证解析失败"
             elif reason_key == "missing":
                 reason = "验证结果缺失"
+            elif reason_key == "title_filtered":
+                reason = "称谓/头衔过滤"
             else:
                 reason = "验证失败"
                 reason_detail = reason_key
@@ -1566,6 +1782,8 @@ class NERAnalyzer(Base):
                 reason = "validator parse failed"
             elif reason_key == "missing":
                 reason = "validator result missing"
+            elif reason_key == "title_filtered":
+                reason = "title/honorific filtered"
             else:
                 reason = "validator failed"
                 reason_detail = reason_key

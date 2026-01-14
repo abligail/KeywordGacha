@@ -9,7 +9,7 @@ Input:
 Requirements:
 1) Only decide keep/remove; no translation or rewriting.
 2) Strictly exclude titles, honorifics, generic/common nouns, pure punctuation/numbers, or broken fragments.
-3) Keep clear proper nouns or named entities (character names, places, organizations, special items) supported by context.
+3) Keep clear proper nouns or named entities (character names, surnames, places, organizations, special items) supported by context.
 4) If context is insufficient, prefer keep but provide a reason.
 
 Output JSONLINE (single line only):

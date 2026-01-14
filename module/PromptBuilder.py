@@ -85,12 +85,20 @@ class PromptBuilder(Base):
                 prefix = __class__.get_prefix(prompt_language)
 
             # 基本
-            if prompt_language == BaseLanguage.Enum.ZH and self.config.custom_prompt_zh_enable == True:
-                base = self.config.custom_prompt_zh_data
-            elif prompt_language == BaseLanguage.Enum.EN and self.config.custom_prompt_en_enable == True:
-                base = self.config.custom_prompt_en_data
+            if task_type == "extractor":
+                if prompt_language == BaseLanguage.Enum.ZH and self.config.custom_prompt_zh_enable == True:
+                    base = self.config.custom_prompt_zh_data
+                elif prompt_language == BaseLanguage.Enum.EN and self.config.custom_prompt_en_enable == True:
+                    base = self.config.custom_prompt_en_data
+                else:
+                    base = __class__.get_optional_template(prompt_language, "extractor_base", "base")
             else:
-                base = __class__.get_base(prompt_language)
+                if prompt_language == BaseLanguage.Enum.ZH and self.config.custom_prompt_zh_enable == True:
+                    base = self.config.custom_prompt_zh_data
+                elif prompt_language == BaseLanguage.Enum.EN and self.config.custom_prompt_en_enable == True:
+                    base = self.config.custom_prompt_en_data
+                else:
+                    base = __class__.get_base(prompt_language)
 
             # 后缀
             if task_type == "extractor":
