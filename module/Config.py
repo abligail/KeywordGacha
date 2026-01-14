@@ -36,6 +36,7 @@ class Config():
 
     # BasicSettingsPage
     token_threshold: int = 2048
+    max_output_tokens: int = 65536
     max_workers: int = 0
     rpm_threshold: int = 0
     request_timeout: int = 120

@@ -220,6 +220,8 @@ class LocalizerZH():
     )
     basic_settings_page_token_threshold_title: str = "任务长度阈值"
     basic_settings_page_token_threshold_content: str = "每个任务所包含的文本的最大 Token 数量"
+    basic_settings_page_max_output_tokens_title: str = "回复 Token 上限"
+    basic_settings_page_max_output_tokens_content: str = "每次请求允许的回复最大 Token 数量"
     basic_settings_page_request_timeout_title: str = "超时时间阈值"
     basic_settings_page_request_timeout_content: str = (
         "发起请求时等待模型回复的最长时间（秒），超时仍未收到回复，则会判断为任务失败"

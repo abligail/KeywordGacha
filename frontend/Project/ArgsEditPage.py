@@ -82,9 +82,10 @@ class ArgsEditPage(MessageBoxBase, Base):
             widget.set_slider_visible(False)
 
         # 重置为默认值
-        self.platform[arg] = getattr(__class__, f"{arg.upper()}_DEFAULT")
-        widget.get_value_label().setText(f"{getattr(__class__, f"{arg.upper()}_DEFAULT"):.2f}")
-        widget.get_slider().setValue(int(getattr(__class__, f"{arg.upper()}_DEFAULT") * 100))
+        default_value = getattr(__class__, f"{arg.upper()}_DEFAULT")
+        self.platform[arg] = default_value
+        widget.get_value_label().setText(f"{default_value:.2f}")
+        widget.get_slider().setValue(int(default_value * 100))
 
         # 更新配置文件
         config = Config().load()
@@ -103,7 +104,7 @@ class ArgsEditPage(MessageBoxBase, Base):
 
             widget.get_slider().setRange(0, 100)
             widget.get_slider().setValue(int(self.platform.get("top_p") * 100))
-            widget.get_value_label().setText(f"{self.platform.get("top_p"):.2f}")
+            widget.get_value_label().setText(f"{self.platform.get('top_p'):.2f}")
 
             # 设置可见性
             widget.set_slider_visible(self.platform.get("top_p_custom_enable") == True)
@@ -132,7 +133,7 @@ class ArgsEditPage(MessageBoxBase, Base):
 
             widget.get_slider().setRange(0, 100)
             widget.get_slider().setValue(int(self.platform.get("temperature") * 100))
-            widget.get_value_label().setText(f"{self.platform.get("temperature"):.2f}")
+            widget.get_value_label().setText(f"{self.platform.get('temperature'):.2f}")
 
             # 设置可见性
             widget.set_slider_visible(self.platform.get("temperature_custom_enable") == True)
@@ -161,7 +162,7 @@ class ArgsEditPage(MessageBoxBase, Base):
 
             widget.get_slider().setRange(0, 100)
             widget.get_slider().setValue(int(self.platform.get("presence_penalty") * 100))
-            widget.get_value_label().setText(f"{self.platform.get("presence_penalty"):.2f}")
+            widget.get_value_label().setText(f"{self.platform.get('presence_penalty'):.2f}")
 
             # 设置可见性
             widget.set_slider_visible(self.platform.get("presence_penalty_custom_enable") == True)
@@ -190,7 +191,7 @@ class ArgsEditPage(MessageBoxBase, Base):
 
             widget.get_slider().setRange(0, 100)
             widget.get_slider().setValue(int(self.platform.get("frequency_penalty") * 100))
-            widget.get_value_label().setText(f"{self.platform.get("frequency_penalty"):.2f}")
+            widget.get_value_label().setText(f"{self.platform.get('frequency_penalty'):.2f}")
 
             # 设置可见性
             widget.set_slider_visible(self.platform.get("frequency_penalty_custom_enable") == True)

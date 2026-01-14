@@ -40,7 +40,7 @@ class FileManager(Base):
     # 读
     def read_from_path(self) -> tuple[Project, list[Item]]:
         project: Project = Project.from_dict({
-            "id": f"{datetime.now().strftime("%Y%m%d_%H%M%S")}_{random.randint(100000, 999999)}",
+            "id": f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(100000, 999999)}",
         })
 
         items: list[Item] = []
@@ -182,10 +182,10 @@ class FileManager(Base):
                     writer.write(f"{Localizer.get().ner_output_log_src}{src}" + "\n")
                     writer.write(f"{Localizer.get().ner_output_log_dst}{dst}" + "\n")
                     if self.config.output_choices == True:
-                        writer.write(f"{Localizer.get().ner_output_log_dst_choices}{", ".join(dst_choices)}" + "\n")
+                        writer.write(f"{Localizer.get().ner_output_log_dst_choices}{', '.join(dst_choices)}" + "\n")
                     writer.write(f"{Localizer.get().ner_output_log_info}{info}" + "\n")
                     if self.config.output_choices == True:
-                        writer.write(f"{Localizer.get().ner_output_log_info_choices}{", ".join(info_choices)}" + "\n")
+                        writer.write(f"{Localizer.get().ner_output_log_info_choices}{', '.join(info_choices)}" + "\n")
                     writer.write(f"{Localizer.get().ner_output_log_count}{count}" + "\n")
                     writer.write(f"{Localizer.get().ner_output_log_context}※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※" + "\n")
                     writer.write(__class__.RE_BLANK.sub("\n", "\n".join(context)) + "\n")

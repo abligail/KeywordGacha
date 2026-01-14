@@ -122,4 +122,4 @@ class LogManager():
             self.console_logger.warning(f"{msg_e}\n{self.get_trackback(e)}\n") if console == True else None
 
     def get_trackback(self, e: Exception) -> str:
-        return f"{("".join(traceback.format_exception(e))).strip()}"
+        return "".join(traceback.format_exception(e)).strip()

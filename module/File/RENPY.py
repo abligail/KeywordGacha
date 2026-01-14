@@ -205,11 +205,11 @@ class RENPY(Base):
                 if line.startswith("    # "):
                     if len(results) > 0:
                         line = RENPY.RE_RENPY.sub(lambda m: repl(m, i, dsts), line)
-                        result.append(f"    {line.removeprefix("    # ")}")
+                        result.append(f"    {line.removeprefix('    # ')}")
                 elif line.startswith("    old "):
                     if len(results) > 0:
                         line = RENPY.RE_RENPY.sub(lambda m: repl(m, i, dsts), line)
-                        result.append(f"    new {line.removeprefix("    old ")}")
+                        result.append(f"    new {line.removeprefix('    old ')}")
 
             with open(abs_path, "w", encoding = "utf-8") as writer:
                 writer.write("\n".join(result))

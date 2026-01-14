@@ -42,6 +42,7 @@ class BasicSettingsPage(QWidget, Base):
         self.add_widget_max_workers(scroll_area_vbox, config, window)
         self.add_widget_rpm_threshold(scroll_area_vbox, config, window)
         self.add_widget_token_threshold(scroll_area_vbox, config, window)
+        self.add_widget_max_output_tokens(scroll_area_vbox, config, window)
         self.add_widget_request_timeout(scroll_area_vbox, config, window)
         self.add_widget_max_round(scroll_area_vbox, config, window)
 
@@ -106,6 +107,27 @@ class BasicSettingsPage(QWidget, Base):
             SpinCard(
                 title = Localizer.get().basic_settings_page_token_threshold_title,
                 description = Localizer.get().basic_settings_page_token_threshold_content,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # 回复 Token 上限
+    def add_widget_max_output_tokens(self, parent: QLayout, config: Config, window: FluentWindow)-> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(1, 9999999)
+            widget.get_spin_box().setValue(config.max_output_tokens)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.max_output_tokens = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().basic_settings_page_max_output_tokens_title,
+                description = Localizer.get().basic_settings_page_max_output_tokens_content,
                 init = init,
                 value_changed = value_changed,
             )

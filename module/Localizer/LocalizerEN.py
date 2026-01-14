@@ -220,6 +220,8 @@ class LocalizerEN(LocalizerZH):
     )
     basic_settings_page_token_threshold_title: str = "Task Length Threshold"
     basic_settings_page_token_threshold_content: str = "The maximum number of text tokens contained in each task"
+    basic_settings_page_max_output_tokens_title: str = "Max Output Tokens"
+    basic_settings_page_max_output_tokens_content: str = "Maximum number of tokens allowed in a single model response"
     basic_settings_page_request_timeout_title: str = "Request Timeout"
     basic_settings_page_request_timeout_content: str = (
         "The maximum time (seconds) to wait for the model's response when making a request"

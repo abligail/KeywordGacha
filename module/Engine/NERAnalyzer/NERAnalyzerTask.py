@@ -138,7 +138,7 @@ class NERAnalyzerTask(Base):
             if v.get("regex", False) != True:
                 src = src.replace(v.get("src"), v.get("dst"))
             else:
-                src = re.sub(rf"{v.get("src")}", rf"{v.get("dst")}", src)
+                src = re.sub(rf"{v.get('src')}", rf"{v.get('dst')}", src)
 
         return src
 
