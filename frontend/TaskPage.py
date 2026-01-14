@@ -310,9 +310,18 @@ class TaskPage(QWidget, Base):
             self.ring.setValue(int(percent * 10000))
             self.ring.setFormat(f"{Localizer.get().task_page_status_stopping}\n{percent * 100:.2f}%")
         elif Engine.get().get_status() == Base.TaskStatus.NERING:
-            percent = self.data.get("line", 0) / max(1, self.data.get("total_line", 0))
+            stage = self.data.get("stage", "extracting")
+            if stage == "validating":
+                percent = self.data.get("stage_progress", 0) / max(1, self.data.get("stage_total", 1))
+                status_text = Localizer.get().task_page_status_validating
+            elif stage == "gendering":
+                percent = self.data.get("stage_progress", 0) / max(1, self.data.get("stage_total", 1))
+                status_text = Localizer.get().task_page_status_gendering
+            else:
+                percent = self.data.get("line", 0) / max(1, self.data.get("total_line", 0))
+                status_text = Localizer.get().task_page_status_nering
             self.ring.setValue(int(percent * 10000))
-            self.ring.setFormat(f"{Localizer.get().task_page_status_nering}\n{percent * 100:.2f}%")
+            self.ring.setFormat(f"{status_text}\n{percent * 100:.2f}%")
         else:
             self.ring.setValue(0)
             self.ring.setFormat(Localizer.get().task_page_status_idle)

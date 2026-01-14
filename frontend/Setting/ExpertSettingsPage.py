@@ -46,6 +46,7 @@ class ExpertSettingsPage(QWidget, Base):
         self.add_widget_multi_agent_context_budget(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_context_budget_long(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_gender_retry_long(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_apply_on_export(scroll_area_vbox, config, window)
         self.add_widget_output_choices(scroll_area_vbox, config, window)
         self.add_widget_output_kvjson(scroll_area_vbox, config, window)
 
@@ -198,6 +199,28 @@ class ExpertSettingsPage(QWidget, Base):
             SwitchButtonCard(
                 title = Localizer.get().expert_settings_page_multi_agent_gender_retry_title,
                 description = Localizer.get().expert_settings_page_multi_agent_gender_retry_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 导出时执行多 Agent
+    def add_widget_multi_agent_apply_on_export(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_apply_on_export
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_apply_on_export = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_export_title,
+                description = Localizer.get().expert_settings_page_multi_agent_export_description,
                 init = init,
                 checked_changed = checked_changed,
             )

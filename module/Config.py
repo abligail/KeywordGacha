@@ -51,6 +51,7 @@ class Config():
     multi_agent_context_budget: int = 4000
     multi_agent_context_budget_long: int = 8000
     multi_agent_gender_retry_long: bool = True
+    multi_agent_apply_on_export: bool = False
 
     # ProjectPage
     source_language: BaseLanguage.Enum = BaseLanguage.Enum.JA

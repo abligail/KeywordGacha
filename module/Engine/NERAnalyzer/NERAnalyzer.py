@@ -13,6 +13,7 @@ from rich.progress import TaskID
 
 from base.Base import Base
 from base.BaseLanguage import BaseLanguage
+from base.LogManager import LogManager
 from model.Item import Item
 from module.CacheManager import CacheManager
 from module.Config import Config
@@ -80,6 +81,11 @@ class NERAnalyzer(Base):
 
         # 线程锁
         self.lock = threading.Lock()
+        self.agent_usage_lock = threading.Lock()
+        self.agent_usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }
 
         # 注册事件
         self.subscribe(Base.Event.PROJECT_CHECK_RUN, self.project_check_run)
@@ -221,6 +227,9 @@ class NERAnalyzer(Base):
                 "total_output_tokens": 0,
                 "time": 0,
                 "glossary": [],
+                "stage": "extracting",
+                "stage_progress": 0,
+                "stage_total": 0,
             }
 
         # 更新翻译进度
@@ -461,7 +470,10 @@ class NERAnalyzer(Base):
         glossary = self.search_for_context(glossary, self.cache_manager.get_items(), end)
 
         review_entries: list[dict[str, str]] = []
-        if self.config.multi_agent_enable == True and end == True:
+        apply_multi_agent = self.config.multi_agent_enable == True and (
+            end == True or self.config.multi_agent_apply_on_export == True
+        )
+        if apply_multi_agent == True:
             glossary, review_entries = self.apply_multi_agent_pipeline(glossary)
 
         # 排序
@@ -772,8 +784,12 @@ class NERAnalyzer(Base):
         prompt_language, _, _ = prompt_builder.resolve_prompt_language()
         max_workers, rpm_threshold = self.initialize_max_workers()
 
+        self.reset_agent_usage()
         glossary, validator_review_entries = self.run_validator(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
+        self.flush_agent_usage()
+        self.reset_agent_usage()
         glossary, gender_review_entries = self.run_gender(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
+        self.flush_agent_usage()
         review_entries = self.merge_review_entries(validator_review_entries, gender_review_entries)
 
         for entry in glossary:
@@ -781,6 +797,86 @@ class NERAnalyzer(Base):
             entry.pop("validator_reason", None)
 
         return glossary, review_entries
+
+    def reset_agent_usage(self) -> None:
+        with self.agent_usage_lock:
+            self.agent_usage = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+            }
+
+    def record_agent_usage(self, input_tokens: int | None, output_tokens: int | None) -> None:
+        input_tokens = int(input_tokens or 0)
+        output_tokens = int(output_tokens or 0)
+        if input_tokens == 0 and output_tokens == 0:
+            return None
+
+        with self.agent_usage_lock:
+            self.agent_usage["input_tokens"] = self.agent_usage.get("input_tokens", 0) + input_tokens
+            self.agent_usage["output_tokens"] = self.agent_usage.get("output_tokens", 0) + output_tokens
+
+    def flush_agent_usage(self) -> None:
+        with self.agent_usage_lock:
+            input_tokens = self.agent_usage.get("input_tokens", 0)
+            output_tokens = self.agent_usage.get("output_tokens", 0)
+            self.agent_usage = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+            }
+
+        if input_tokens == 0 and output_tokens == 0:
+            return None
+
+        if not isinstance(getattr(self, "extras", None), dict):
+            return None
+
+        with self.lock:
+            self.extras["total_tokens"] = self.extras.get("total_tokens", 0) + input_tokens + output_tokens
+            self.extras["total_output_tokens"] = self.extras.get("total_output_tokens", 0) + output_tokens
+            self.extras["time"] = time.time() - self.extras.get("start_time", 0)
+
+        self.cache_manager.get_project().set_extras(self.extras)
+        self.emit(Base.Event.NER_ANALYZER_UPDATE, self.extras)
+
+    def emit_stage_progress(self, stage: str, progress: int, total: int) -> None:
+        if not isinstance(getattr(self, "extras", None), dict):
+            return None
+
+        with self.lock:
+            self.extras["stage"] = stage
+            self.extras["stage_progress"] = progress
+            self.extras["stage_total"] = total
+            self.extras["time"] = time.time() - self.extras.get("start_time", 0)
+
+        self.emit(Base.Event.NER_ANALYZER_UPDATE, self.extras)
+
+    def log_agent_response(
+        self,
+        agent: str,
+        src: str,
+        response_think: str | None,
+        response_result: str | None,
+        input_tokens: int | None,
+        output_tokens: int | None,
+    ) -> None:
+        logs: list[str] = []
+        if src:
+            logs.append(f"[{agent}] {Localizer.get().ner_output_log_src}{src}")
+        if input_tokens or output_tokens:
+            logs.append(f"[{agent}] tokens: in={int(input_tokens or 0)} out={int(output_tokens or 0)}")
+        if isinstance(response_think, str) and response_think != "":
+            logs.append(Localizer.get().engine_response_think + "\n" + response_think)
+        if isinstance(response_result, str) and response_result != "":
+            logs.append(Localizer.get().engine_response_result + "\n" + response_result)
+
+        if logs == []:
+            return None
+
+        self.info(
+            "\n" + "\n\n".join(logs) + "\n",
+            file = True,
+            console = LogManager.get().is_expert_mode(),
+        )
 
     def run_validator(
         self,
@@ -796,6 +892,7 @@ class NERAnalyzer(Base):
         task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
         results: dict[str, dict[str, str | bool]] = {}
 
+        self.emit_stage_progress("validating", 0, len(glossary))
         with ProgressBar(transient = True) as progress:
             pid = progress.new()
             with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
@@ -804,11 +901,14 @@ class NERAnalyzer(Base):
                     task_limiter.wait()
                     futures.append(executor.submit(self.request_validator, entry, prompt_builder, prompt_language))
 
+                completed_count = 0
                 for future in concurrent.futures.as_completed(futures):
                     result = future.result()
                     if isinstance(result, dict) and result.get("src"):
                         results[result.get("src")] = result
+                    completed_count += 1
                     progress.update(pid, advance = 1, total = len(futures))
+                    self.emit_stage_progress("validating", completed_count, len(futures))
 
         kept: list[dict[str, str | int | list[str]]] = []
         review_entries: list[dict[str, str]] = []
@@ -860,6 +960,7 @@ class NERAnalyzer(Base):
         task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
         results: dict[str, dict[str, str]] = {}
 
+        self.emit_stage_progress("gendering", 0, len(candidates))
         with ProgressBar(transient = True) as progress:
             pid = progress.new()
             with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
@@ -868,11 +969,14 @@ class NERAnalyzer(Base):
                     task_limiter.wait()
                     futures.append(executor.submit(self.request_gender, entry, prompt_builder, prompt_language))
 
+                completed_count = 0
                 for future in concurrent.futures.as_completed(futures):
                     result = future.result()
                     if isinstance(result, dict) and result.get("src"):
                         results[result.get("src")] = result
+                    completed_count += 1
                     progress.update(pid, advance = 1, total = len(futures))
+                    self.emit_stage_progress("gendering", completed_count, len(futures))
 
         review_entries: list[dict[str, str]] = []
         labels = self.get_gender_labels()
@@ -956,13 +1060,17 @@ class NERAnalyzer(Base):
             return None
 
         requester = TaskRequester(self.config, self.platform)
-        skip, _, response_result, _, _ = requester.request([
+        skip, response_think, response_result, input_tokens, output_tokens = requester.request([
             {
                 "role": "user",
                 "content": prompt,
             }
         ])
+        self.record_agent_usage(input_tokens, output_tokens)
+        if skip == False and response_result is not None:
+            self.log_agent_response("validator", str(entry.get("src", "")), response_think, response_result, input_tokens, output_tokens)
         if skip == True or response_result is None:
+            self.warning(f"[validator] request_failed src={entry.get('src', '')}")
             return {
                 "src": entry.get("src", ""),
                 "keep": None,
@@ -1052,13 +1160,17 @@ class NERAnalyzer(Base):
             return None
 
         requester = TaskRequester(self.config, self.platform)
-        skip, _, response_result, _, _ = requester.request([
+        skip, response_think, response_result, input_tokens, output_tokens = requester.request([
             {
                 "role": "user",
                 "content": prompt,
             }
         ])
+        self.record_agent_usage(input_tokens, output_tokens)
+        if skip == False and response_result is not None:
+            self.log_agent_response("gender", str(entry.get("src", "")), response_think, response_result, input_tokens, output_tokens)
         if skip == True or response_result is None:
+            self.warning(f"[gender] request_failed src={entry.get('src', '')}")
             return {
                 "src": entry.get("src", ""),
                 "gender": "",

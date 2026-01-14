@@ -188,6 +188,8 @@ class LocalizerZH():
     task_page_status_idle: str = "无任务"
     task_page_status_testing: str = "测试中"
     task_page_status_nering: str = "提取中"
+    task_page_status_validating: str = "验证中"
+    task_page_status_gendering: str = "性别判定中"
     task_page_status_stopping: str = "停止中"
     task_page_indeterminate_saving: str = "缓存保存中 …"
     task_page_indeterminate_stoping: str = "正在停止任务 …"
@@ -250,6 +252,8 @@ class LocalizerZH():
     expert_settings_page_multi_agent_context_budget_long_description: str = "加长档上下文字符预算（约 8k）"
     expert_settings_page_multi_agent_gender_retry_title: str = "低置信度重试（长上下文）"
     expert_settings_page_multi_agent_gender_retry_description: str = "性别判定低置信度时使用加长上下文重跑"
+    expert_settings_page_multi_agent_export_title: str = "导出时执行多 Agent"
+    expert_settings_page_multi_agent_export_description: str = "点击导出时也执行验证与性别补全（会增加调用量）"
 
     # 质量类通用
     quality_import: str = "导入"

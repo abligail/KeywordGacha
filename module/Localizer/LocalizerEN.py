@@ -188,6 +188,8 @@ class LocalizerEN(LocalizerZH):
     task_page_status_idle: str = "Idle"
     task_page_status_testing: str = "Testing"
     task_page_status_nering: str = "Extracting"
+    task_page_status_validating: str = "Validating"
+    task_page_status_gendering: str = "Gender Detecting"
     task_page_status_stopping: str = "Stopping"
     task_page_indeterminate_saving: str = "Saving cache …"
     task_page_indeterminate_stoping: str = "Stopping task …"
@@ -250,6 +252,8 @@ class LocalizerEN(LocalizerZH):
     expert_settings_page_multi_agent_context_budget_long_description: str = "Character budget for the long context pass"
     expert_settings_page_multi_agent_gender_retry_title: str = "Retry Low-Confidence Gender"
     expert_settings_page_multi_agent_gender_retry_description: str = "Retry gender classification with long context when confidence is low"
+    expert_settings_page_multi_agent_export_title: str = "Apply Multi-Agent on Export"
+    expert_settings_page_multi_agent_export_description: str = "Run validation and gender completion when exporting (more API calls)"
 
     # 质量类通用
     quality_import: str = "Import"
