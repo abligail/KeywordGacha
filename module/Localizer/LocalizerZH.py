@@ -254,6 +254,8 @@ class LocalizerZH():
     expert_settings_page_multi_agent_gender_retry_description: str = "性别判定低置信度时使用加长上下文重跑"
     expert_settings_page_multi_agent_export_title: str = "导出时执行多 Agent"
     expert_settings_page_multi_agent_export_description: str = "点击导出时也执行验证与性别补全（会增加调用量）"
+    expert_settings_page_multi_agent_translate_post_title: str = "翻译后置"
+    expert_settings_page_multi_agent_translate_post_description: str = "验证/性别补全后再翻译术语（会增加调用量）"
 
     # 质量类通用
     quality_import: str = "导入"

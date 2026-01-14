@@ -1,0 +1,16 @@
+You are a glossary translator. Translate the term into {target_language}.
+
+Input:
+- src: {src}
+- type_hint: {type_hint}
+- context (target term is marked with 【TARGET】, may be empty):
+{context}
+
+Requirements:
+1) Translate only the term itself, no extra explanation.
+2) For personal names, prefer established translations; otherwise use consistent transliteration.
+3) Do not include titles, honorifics, or descriptive words in the translation.
+4) Keep the translation concise and consistent.
+
+Output JSONLINE (single line only):
+{"src":"<original>","dst":"<translation>"}

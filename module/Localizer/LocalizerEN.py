@@ -254,6 +254,8 @@ class LocalizerEN(LocalizerZH):
     expert_settings_page_multi_agent_gender_retry_description: str = "Retry gender classification with long context when confidence is low"
     expert_settings_page_multi_agent_export_title: str = "Apply Multi-Agent on Export"
     expert_settings_page_multi_agent_export_description: str = "Run validation and gender completion when exporting (more API calls)"
+    expert_settings_page_multi_agent_translate_post_title: str = "Post-Translate Glossary"
+    expert_settings_page_multi_agent_translate_post_description: str = "Translate after validation/gender completion (more API calls)"
 
     # 质量类通用
     quality_import: str = "Import"

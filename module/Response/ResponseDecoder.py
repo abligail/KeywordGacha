@@ -119,6 +119,23 @@ class ResponseDecoder(Base):
 
         return results
 
+    # 解析翻译结果
+    def decode_translator(self, response: str) -> list[dict[str, str]]:
+        results: list[dict[str, str]] = []
+
+        for json_data in self._iter_json_objects(response):
+            if "src" not in json_data:
+                continue
+            dst_raw = json_data.get("dst", json_data.get("translation", json_data.get("target")))
+            results.append(
+                {
+                    "src": json_data.get("src") if isinstance(json_data.get("src"), str) else "",
+                    "dst": dst_raw if isinstance(dst_raw, str) else ("" if dst_raw is None else str(dst_raw)),
+                }
+            )
+
+        return results
+
     # 解析性别结果
     def decode_gender(self, response: str) -> list[dict[str, str]]:
         results: list[dict[str, str]] = []

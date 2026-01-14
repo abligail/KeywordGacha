@@ -281,7 +281,8 @@ class NERAnalyzer(Base):
             self.info(f"{Localizer.get().engine_api_url} - {self.platform.get('api_url')}")
             self.info(f"{Localizer.get().engine_api_model} - {self.platform.get('model')}")
             self.print("")
-            self.info(PromptBuilder(self.config).build_main())
+            task_type = "extractor" if self.config.multi_agent_enable == True and self.config.multi_agent_translate_post == True else None
+            self.info(PromptBuilder(self.config).build_main(task_type))
             self.print("")
 
             # 开始执行翻译任务
@@ -419,6 +420,13 @@ class NERAnalyzer(Base):
 
     # 输出结果
     def save_ouput(self, glossary: list[dict[str, str]], end: bool) -> None:
+        apply_multi_agent = self.config.multi_agent_enable == True and (
+            end == True
+            or self.config.multi_agent_apply_on_export == True
+            or self.config.multi_agent_translate_post == True
+        )
+        allow_empty_dst = apply_multi_agent == True and self.config.multi_agent_translate_post == True
+
         group: dict[str, list[dict[str, str]]] = {}
         with self.lock:
             v: dict[str, str] = {}
@@ -445,8 +453,8 @@ class NERAnalyzer(Base):
                     dst = dst.strip()
 
                     if fake_name_injected == True:
-                        dst = ""
-                    elif src == "" or dst == "":
+                        continue
+                    elif src == "" or (dst == "" and allow_empty_dst == False):
                         continue
                     elif src == dst and info == "":
                         continue
@@ -467,12 +475,9 @@ class NERAnalyzer(Base):
         glossary = list({v.get("src"): v for v in glossary}.values())
 
         # 计数
-        glossary = self.search_for_context(glossary, self.cache_manager.get_items(), end)
+        glossary = self.search_for_context(glossary, self.cache_manager.get_items(), end, build_snippets = apply_multi_agent)
 
         review_entries: list[dict[str, str]] = []
-        apply_multi_agent = self.config.multi_agent_enable == True and (
-            end == True or self.config.multi_agent_apply_on_export == True
-        )
         if apply_multi_agent == True:
             glossary, review_entries = self.apply_multi_agent_pipeline(glossary)
 
@@ -558,7 +563,16 @@ class NERAnalyzer(Base):
         return text
 
     # 搜索参考文本，并按出现次数排序
-    def search_for_context(self, glossary: list[dict[str, str]], items: list[Item], end: bool) -> list[dict[str, str | int | list[str]]]:
+    def search_for_context(
+        self,
+        glossary: list[dict[str, str]],
+        items: list[Item],
+        end: bool,
+        build_snippets: bool | None = None,
+    ) -> list[dict[str, str | int | list[str]]]:
+        if build_snippets is None:
+            build_snippets = self.config.multi_agent_enable == True and end == True
+
         lines_info: list[tuple[str, str]] = [
             (item.get_file_path(), item.get_src().strip())
             for item in items
@@ -607,7 +621,7 @@ class NERAnalyzer(Base):
                 )
                 entry["count"] = len(entry.get("context"))
 
-                if self.config.multi_agent_enable == True and end == True:
+                if build_snippets == True:
                     snippet_lines = normalized_lines_cp if use_normalized == True else raw_lines_cp
                     target_src = normalized_src if use_normalized == True else raw_src
                     entry["snippets"] = self.build_snippets(
@@ -776,6 +790,18 @@ class NERAnalyzer(Base):
             return True
         return False
 
+    def is_translator_result_invalid(self, result: dict[str, str] | None) -> bool:
+        if not isinstance(result, dict):
+            return True
+        if result.get("dst", "") == "":
+            return True
+        return False
+
+    def normalize_translation(self, text: str) -> str:
+        if not isinstance(text, str):
+            return ""
+        return text.strip()
+
     def apply_multi_agent_pipeline(self, glossary: list[dict[str, str | int | list[str]]]) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
         if glossary == []:
             return glossary, []
@@ -790,11 +816,18 @@ class NERAnalyzer(Base):
         self.reset_agent_usage()
         glossary, gender_review_entries = self.run_gender(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
         self.flush_agent_usage()
-        review_entries = self.merge_review_entries(validator_review_entries, gender_review_entries)
+        translator_review_entries: list[dict[str, str]] = []
+        if self.config.multi_agent_translate_post == True:
+            self.reset_agent_usage()
+            glossary, translator_review_entries = self.run_translator(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
+            self.flush_agent_usage()
+        review_entries = self.merge_review_entries(validator_review_entries, gender_review_entries, translator_review_entries)
 
         for entry in glossary:
             entry.pop("snippets", None)
             entry.pop("validator_reason", None)
+            entry.pop("translation_candidates", None)
+            entry.pop("translation_conflict", None)
 
         return glossary, review_entries
 
@@ -1018,6 +1051,208 @@ class NERAnalyzer(Base):
                 )
 
         return glossary, review_entries
+
+    def run_translator(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        max_workers: int,
+        rpm_threshold: int,
+    ) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
+        if glossary == []:
+            return glossary, []
+
+        task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
+        results: dict[str, dict[str, str]] = {}
+
+        with ProgressBar(transient = True) as progress:
+            pid = progress.new()
+            with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
+                futures = []
+                for entry in glossary:
+                    task_limiter.wait()
+                    futures.append(executor.submit(self.request_translator, entry, prompt_builder, prompt_language))
+
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    if isinstance(result, dict) and result.get("src"):
+                        results[result.get("src")] = result
+                    progress.update(pid, advance = 1, total = len(futures))
+
+        review_entries: list[dict[str, str]] = []
+        for entry in glossary:
+            result = results.get(entry.get("src"))
+            if result is None:
+                review_entries.append(
+                    self.build_translation_review_entry(
+                        entry,
+                        prompt_language,
+                        "missing",
+                        "",
+                        "",
+                        "",
+                    )
+                )
+                continue
+
+            translated = self.normalize_translation(result.get("dst", ""))
+            if translated == "":
+                review_entries.append(
+                    self.build_translation_review_entry(
+                        entry,
+                        prompt_language,
+                        "invalid_output",
+                        "",
+                        result.get("context", ""),
+                        "",
+                    )
+                )
+                continue
+
+            translated = self.convert_chinese_character_form(translated)
+            existing = self.normalize_translation(entry.get("dst", ""))
+            entry["dst"] = translated
+            conflict = bool(result.get("translation_conflict"))
+            candidates = result.get("translation_candidates")
+            if conflict == True or (existing != "" and translated != existing):
+                entry["translation_conflict"] = True
+                merged_candidates: list[str] = []
+                if isinstance(candidates, list):
+                    merged_candidates.extend([v for v in candidates if isinstance(v, str) and v != ""])
+                if existing != "":
+                    merged_candidates.append(existing)
+                merged_candidates.append(translated)
+                entry["translation_candidates"] = list(dict.fromkeys(merged_candidates))
+                review_entries.append(
+                    self.build_translation_review_entry(
+                        entry,
+                        prompt_language,
+                        "conflict",
+                        translated,
+                        result.get("context", ""),
+                        existing,
+                    )
+                )
+
+            dst_choices = entry.get("dst_choices")
+            if isinstance(dst_choices, set):
+                dst_choices.add(translated)
+                dst_choices.discard("")
+
+        return glossary, review_entries
+
+    def request_translator(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+    ) -> dict[str, str] | None:
+        short_budget = max(0, int(self.config.multi_agent_context_budget))
+        long_budget = max(0, int(self.config.multi_agent_context_budget_long))
+
+        short_result = self.request_translator_once(entry, prompt_builder, prompt_language, short_budget)
+        needs_retry = self.is_translator_result_invalid(short_result)
+        if needs_retry == False:
+            existing = self.normalize_translation(entry.get("dst", ""))
+            proposed = self.normalize_translation(short_result.get("dst", "") if isinstance(short_result, dict) else "")
+            if existing != "" and proposed != "" and existing != proposed:
+                needs_retry = True
+
+        if needs_retry == True:
+            retry_budget = long_budget if long_budget > short_budget else short_budget
+            long_result = self.request_translator_once(entry, prompt_builder, prompt_language, retry_budget)
+            return self.pick_translation_result(entry, short_result, long_result)
+
+        return short_result
+
+    def request_translator_once(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        budget: int,
+    ) -> dict[str, str] | None:
+        context = self.format_snippet_context(
+            entry.get("snippets", []),
+            budget,
+            prompt_language,
+        )
+        prompt = prompt_builder.build_agent_prompt(
+            "translator",
+            {
+                "src": entry.get("src", ""),
+                "type_hint": entry.get("info", ""),
+                "context": context,
+            },
+        )
+        if prompt == "":
+            return None
+
+        requester = TaskRequester(self.config, self.platform)
+        skip, response_think, response_result, input_tokens, output_tokens = requester.request([
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ])
+        self.record_agent_usage(input_tokens, output_tokens)
+        if skip == False and response_result is not None:
+            self.log_agent_response("translator", str(entry.get("src", "")), response_think, response_result, input_tokens, output_tokens)
+        if skip == True or response_result is None:
+            self.warning(f"[translator] request_failed src={entry.get('src', '')}")
+            return {
+                "src": entry.get("src", ""),
+                "dst": "",
+                "context": context,
+            }
+
+        results = ResponseDecoder().decode_translator(response_result)
+        if results != []:
+            result = results[0]
+            if result.get("src", "") == "":
+                result["src"] = entry.get("src", "")
+            result["context"] = context
+            return result
+
+        return {
+            "src": entry.get("src", ""),
+            "dst": "",
+            "context": context,
+        }
+
+    def pick_translation_result(
+        self,
+        entry: dict[str, str | int | list[str]],
+        short_result: dict[str, str] | None,
+        long_result: dict[str, str] | None,
+    ) -> dict[str, str] | None:
+        if long_result is None:
+            return short_result
+        if short_result is None:
+            return long_result
+
+        short_invalid = self.is_translator_result_invalid(short_result)
+        long_invalid = self.is_translator_result_invalid(long_result)
+        if short_invalid == True and long_invalid == False:
+            return long_result
+        if long_invalid == True and short_invalid == False:
+            return short_result
+        if short_invalid == True and long_invalid == True:
+            return long_result
+
+        short_dst = self.normalize_translation(short_result.get("dst", ""))
+        long_dst = self.normalize_translation(long_result.get("dst", ""))
+        if short_dst == long_dst:
+            return short_result
+
+        existing = self.normalize_translation(entry.get("dst", ""))
+        if existing in (short_dst, long_dst) and existing != "":
+            return short_result if existing == short_dst else long_result
+
+        long_result["translation_conflict"] = True
+        long_result["translation_candidates"] = [short_dst, long_dst]
+        return long_result
 
     def request_validator(
         self,
@@ -1258,6 +1493,52 @@ class NERAnalyzer(Base):
             "review_context": context,
         }
 
+    def build_translation_review_entry(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_language: BaseLanguage.Enum,
+        reason_key: str,
+        translated: str,
+        context: str,
+        existing: str,
+    ) -> dict[str, str]:
+        reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        if prompt_language == BaseLanguage.Enum.ZH:
+            if reason_key == "conflict":
+                reason = "翻译冲突"
+            elif reason_key == "missing":
+                reason = "翻译结果缺失"
+            else:
+                reason = "翻译输出异常"
+            info = f"{entry.get('info', '')}（需复核：{reason}）"
+        else:
+            if reason_key == "conflict":
+                reason = "translation conflict"
+            elif reason_key == "missing":
+                reason = "translation missing"
+            else:
+                reason = "invalid translation output"
+            info = f"{entry.get('info', '')} (Review: {reason})"
+
+        details: list[str] = []
+        if isinstance(existing, str) and existing != "":
+            details.append(f"existing={existing}")
+        if isinstance(translated, str) and translated != "":
+            details.append(f"translated={translated}")
+
+        if details != []:
+            detail_text = " | ".join(details)
+            context = detail_text if context == "" else f"{detail_text}\n\n{context}"
+
+        return {
+            "src": entry.get("src", ""),
+            "dst": entry.get("dst", ""),
+            "info": info,
+            "review_reason": reason,
+            "review_evidence": "",
+            "review_context": context,
+        }
+
     def build_validator_review_entry(
         self,
         entry: dict[str, str | int | list[str]],
@@ -1308,8 +1589,48 @@ class NERAnalyzer(Base):
                 src = entry.get("src", "")
                 if src == "":
                     continue
-                merged[src] = entry
+                if src not in merged:
+                    merged[src] = entry
+                    continue
+
+                merged_entry = merged[src]
+                merged_entry["review_reason"] = self.merge_review_text(
+                    merged_entry.get("review_reason", ""),
+                    entry.get("review_reason", ""),
+                    " | ",
+                )
+                merged_entry["review_evidence"] = self.merge_review_text(
+                    merged_entry.get("review_evidence", ""),
+                    entry.get("review_evidence", ""),
+                    " | ",
+                )
+                merged_entry["review_context"] = self.merge_review_text(
+                    self.flatten_review_context(merged_entry.get("review_context", "")),
+                    self.flatten_review_context(entry.get("review_context", "")),
+                    "\n---\n",
+                )
+
+                if merged_entry.get("info", "") == "" and entry.get("info", "") != "":
+                    merged_entry["info"] = entry.get("info", "")
+                if merged_entry.get("dst", "") == "" and entry.get("dst", "") != "":
+                    merged_entry["dst"] = entry.get("dst", "")
         return list(merged.values())
+
+    def merge_review_text(self, left: str, right: str, sep: str) -> str:
+        left = "" if left is None else str(left)
+        right = "" if right is None else str(right)
+        if left == "":
+            return right
+        if right == "":
+            return left
+        if right in left:
+            return left
+        return f"{left}{sep}{right}"
+
+    def flatten_review_context(self, context: str | list[str]) -> str:
+        if isinstance(context, list):
+            return "\n".join([str(v) for v in context if v is not None])
+        return "" if context is None else str(context)
 
     # 中文字型转换
     def convert_chinese_character_form(self, src: str) -> str:

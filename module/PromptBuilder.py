@@ -47,6 +47,19 @@ class PromptBuilder(Base):
         with open(f"resource/prompt/{language.lower()}/{name}.txt", "r", encoding = "utf-8-sig") as reader:
             return reader.read().strip()
 
+    @classmethod
+    def get_optional_template(cls, language: BaseLanguage.Enum, name: str, fallback: str) -> str:
+        try:
+            return cls.get_template(language, name)
+        except FileNotFoundError:
+            if fallback == "prefix":
+                return cls.get_prefix(language)
+            if fallback == "suffix":
+                return cls.get_suffix(language)
+            if fallback == "base":
+                return cls.get_base(language)
+            return ""
+
     def resolve_prompt_language(self) -> tuple[BaseLanguage.Enum, str, str]:
         if self.config.target_language == BaseLanguage.Enum.ZH:
             prompt_language = BaseLanguage.Enum.ZH
@@ -60,13 +73,16 @@ class PromptBuilder(Base):
         return prompt_language, source_language, target_language
 
     # 获取主提示词
-    def build_main(self) -> str:
+    def build_main(self, task_type: str | None = None) -> str:
         # 判断提示词语言
         prompt_language, source_language, target_language = self.resolve_prompt_language()
 
         with __class__.LOCK:
             # 前缀
-            prefix = __class__.get_prefix(prompt_language)
+            if task_type == "extractor":
+                prefix = __class__.get_optional_template(prompt_language, "extractor_prefix", "prefix")
+            else:
+                prefix = __class__.get_prefix(prompt_language)
 
             # 基本
             if prompt_language == BaseLanguage.Enum.ZH and self.config.custom_prompt_zh_enable == True:
@@ -77,7 +93,10 @@ class PromptBuilder(Base):
                 base = __class__.get_base(prompt_language)
 
             # 后缀
-            suffix = __class__.get_suffix(prompt_language)
+            if task_type == "extractor":
+                suffix = __class__.get_optional_template(prompt_language, "extractor_suffix", "suffix")
+            else:
+                suffix = __class__.get_suffix(prompt_language)
 
         # 组装提示词
         full_prompt = prefix + "\n" + base + "\n" + suffix
@@ -120,13 +139,13 @@ class PromptBuilder(Base):
             )
 
     # 生成提示词
-    def generate_prompt(self, srcs: list[str]) -> tuple[list[dict], list[str]]:
+    def generate_prompt(self, srcs: list[str], task_type: str | None = None) -> tuple[list[dict], list[str]]:
         # 初始化
         messages: list[dict[str, str]] = []
         console_log: list[str] = []
 
         # 基础提示词
-        content = self.build_main()
+        content = self.build_main(task_type)
 
         # 输入
         result = self.build_inputs(srcs)

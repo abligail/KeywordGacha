@@ -80,7 +80,8 @@ class NERAnalyzerTask(Base):
             }
 
         # 生成请求提示词
-        messages, console_log = self.prompt_builder.generate_prompt(srcs)
+        task_type = "extractor" if self.config.multi_agent_enable == True and self.config.multi_agent_translate_post == True else None
+        messages, console_log = self.prompt_builder.generate_prompt(srcs, task_type = task_type)
 
         # 发起请求
         requester = TaskRequester(self.config, self.platform)
