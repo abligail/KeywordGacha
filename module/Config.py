@@ -54,6 +54,8 @@ class Config():
     multi_agent_context_budget: int = 4000
     multi_agent_context_budget_long: int = 8000
     multi_agent_gender_retry_long: bool = True
+    multi_agent_gender_vote_min_count: int = 10
+    multi_agent_gender_vote_max_windows: int = 15
     multi_agent_gender_high_confidence_min_count: int = 5
     multi_agent_review_high_freq_min_count: int = 5
     multi_agent_apply_on_export: bool = False

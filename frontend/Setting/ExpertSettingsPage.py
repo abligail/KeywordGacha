@@ -46,6 +46,8 @@ class ExpertSettingsPage(QWidget, Base):
         self.add_widget_multi_agent_context_budget(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_context_budget_long(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_gender_retry_long(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_gender_vote_min_count(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_gender_vote_max_windows(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_gender_high_confidence_min_count(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_review_high_freq_min_count(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_title_filter(scroll_area_vbox, config, window)
@@ -207,6 +209,48 @@ class ExpertSettingsPage(QWidget, Base):
                 description = Localizer.get().expert_settings_page_multi_agent_gender_retry_description,
                 init = init,
                 checked_changed = checked_changed,
+            )
+        )
+
+    # 性别判定多窗口触发阈值
+    def add_widget_multi_agent_gender_vote_min_count(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.multi_agent_gender_vote_min_count)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_gender_vote_min_count = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_gender_vote_min_count_title,
+                description = Localizer.get().expert_settings_page_multi_agent_gender_vote_min_count_description,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # 性别判定多窗口最大数量
+    def add_widget_multi_agent_gender_vote_max_windows(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 99)
+            widget.get_spin_box().setValue(config.multi_agent_gender_vote_max_windows)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_gender_vote_max_windows = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_gender_vote_max_windows_title,
+                description = Localizer.get().expert_settings_page_multi_agent_gender_vote_max_windows_description,
+                init = init,
+                value_changed = value_changed,
             )
         )
 

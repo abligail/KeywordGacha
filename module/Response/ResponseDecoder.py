@@ -55,6 +55,32 @@ class ResponseDecoder(Base):
         if value is None:
             return None
         text = str(value).strip().lower()
+        if text == "":
+            return None
+        if (
+            text in (
+                "unknown",
+                "unknown gender",
+                "unknown name",
+                "name of unknown gender",
+                "uncertain",
+                "unsure",
+                "not sure",
+                "not certain",
+                "无法判断",
+                "不确定",
+                "未知",
+                "未知性别",
+                "未知性别人名",
+            )
+            or "unknown" in text
+            or "uncertain" in text
+            or "unsure" in text
+            or "not sure" in text
+            or "不确定" in text
+            or "未知" in text
+        ):
+            return "未知性别人名"
         if text in ("male name", "male", "m", "男", "男性", "男性人名"):
             return "男性人名"
         if text in ("female name", "female", "f", "女", "女性", "女性人名"):

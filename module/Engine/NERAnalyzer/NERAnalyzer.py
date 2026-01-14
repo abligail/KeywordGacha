@@ -770,6 +770,193 @@ class NERAnalyzer(Base):
 
         return "\n\n".join(blocks)
 
+    def get_gender_vote_window_count(self, entry: dict[str, str | int | list[str]]) -> int:
+        threshold = max(0, int(self.config.multi_agent_gender_vote_min_count))
+        max_windows = max(0, int(self.config.multi_agent_gender_vote_max_windows))
+        if threshold <= 0 or max_windows <= 1:
+            return 0
+        count = entry.get("count", 0)
+        try:
+            count_value = int(count)
+        except Exception:
+            count_value = 0
+        if count_value < threshold:
+            return 0
+        snippets = entry.get("snippets", [])
+        if not isinstance(snippets, list) or len(snippets) < 2:
+            return 0
+        windows = max(2, (count_value + threshold - 1) // threshold)
+        windows = min(max_windows, windows, len(snippets))
+        return windows
+
+    def split_snippets_for_gender_vote(
+        self,
+        snippets: list[dict[str, str | int]],
+        windows: int,
+    ) -> list[list[dict[str, str | int]]]:
+        if snippets == []:
+            return []
+        if windows <= 1:
+            return [snippets]
+        ordered = sorted(snippets, key = lambda x: int(x.get("order", 0)))
+        chunk_size = max(1, (len(ordered) + windows - 1) // windows)
+        groups = [ordered[i : i + chunk_size] for i in range(0, len(ordered), chunk_size)]
+        return groups if groups != [] else [snippets]
+
+    def count_evidence_refs(self, evidence: str) -> int:
+        if not isinstance(evidence, str) or evidence == "":
+            return 0
+        return len(re.findall(r"S\d{3}", evidence, flags = re.IGNORECASE))
+
+    def score_gender_result(self, result: dict[str, str]) -> int:
+        score = 0
+        if result.get("confidence", "") == "high":
+            score += 10
+        if self.is_evidence_valid(result.get("evidence", "")):
+            score += 5
+        score += self.count_evidence_refs(result.get("evidence", ""))
+        return score
+
+    def build_gender_vote_summary(self, results: list[dict[str, str]], labels: dict[str, str]) -> str:
+        if results == []:
+            return ""
+        counts = {
+            "male": {"high": 0, "low": 0},
+            "female": {"high": 0, "low": 0},
+            "unknown": {"high": 0, "low": 0},
+            "invalid": 0,
+        }
+        details: list[str] = []
+        for idx, result in enumerate(results, start = 1):
+            gender = result.get("gender", "")
+            confidence = result.get("confidence", "")
+            evidence = result.get("evidence", "")
+            if gender == labels.get("male"):
+                counts["male"]["high" if confidence == "high" else "low"] += 1
+                gender_label = "male"
+            elif gender == labels.get("female"):
+                counts["female"]["high" if confidence == "high" else "low"] += 1
+                gender_label = "female"
+            elif gender == labels.get("unknown"):
+                counts["unknown"]["high" if confidence == "high" else "low"] += 1
+                gender_label = "unknown"
+            else:
+                counts["invalid"] += 1
+                gender_label = "invalid"
+            detail = f"W{idx}:{gender_label}/{confidence} {evidence}".strip()
+            details.append(detail)
+
+        summary = (
+            "vote_summary: "
+            f"male=H{counts['male']['high']}/L{counts['male']['low']}, "
+            f"female=H{counts['female']['high']}/L{counts['female']['low']}, "
+            f"unknown=H{counts['unknown']['high']}/L{counts['unknown']['low']}, "
+            f"invalid={counts['invalid']}"
+        )
+        if details == []:
+            return summary
+        return summary + "\n" + "\n".join(details)
+
+    def pick_gender_vote_result(
+        self,
+        entry: dict[str, str | int | list[str]],
+        results: list[dict[str, str]],
+    ) -> dict[str, str] | None:
+        if results == []:
+            return None
+        labels = self.get_gender_labels()
+        normalized: list[dict[str, str]] = []
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            gender = self.map_gender_label(result.get("gender", ""))
+            confidence = result.get("confidence", "")
+            evidence = result.get("evidence", "")
+            context = result.get("context", "")
+            if gender == labels.get("unknown"):
+                confidence = "low"
+            normalized.append(
+                {
+                    "src": result.get("src", "") if result.get("src", "") != "" else entry.get("src", ""),
+                    "gender": gender,
+                    "confidence": confidence,
+                    "evidence": evidence,
+                    "context": context,
+                }
+            )
+
+        if normalized == []:
+            return None
+
+        high_male = [
+            result for result in normalized
+            if result.get("confidence") == "high" and result.get("gender") == labels.get("male")
+        ]
+        high_female = [
+            result for result in normalized
+            if result.get("confidence") == "high" and result.get("gender") == labels.get("female")
+        ]
+        conflict = high_male != [] and high_female != []
+        vote_summary = self.build_gender_vote_summary(normalized, labels)
+
+        selected: dict[str, str] | None = None
+        if conflict == True:
+            candidates = high_male + high_female
+            selected = max(candidates, key = self.score_gender_result, default = None)
+            if selected is None:
+                selected = normalized[0]
+            selected = selected.copy()
+            selected["gender"] = labels.get("unknown")
+            selected["confidence"] = "low"
+            selected["vote_conflict"] = True
+        else:
+            if high_male != [] or high_female != []:
+                selected = max(high_male + high_female, key = self.score_gender_result)
+            else:
+                low_candidates = [
+                    result for result in normalized
+                    if result.get("gender") in (labels.get("male"), labels.get("female"), labels.get("unknown"))
+                ]
+                counts = {"male": 0, "female": 0, "unknown": 0}
+                for result in low_candidates:
+                    if result.get("gender") == labels.get("male"):
+                        counts["male"] += 1
+                    elif result.get("gender") == labels.get("female"):
+                        counts["female"] += 1
+                    elif result.get("gender") == labels.get("unknown"):
+                        counts["unknown"] += 1
+                max_count = max(counts.values()) if counts != {} else 0
+                if max_count <= 0:
+                    selected = max(normalized, key = self.score_gender_result)
+                else:
+                    top = [key for key, value in counts.items() if value == max_count]
+                    if len(top) != 1:
+                        chosen = "unknown"
+                    else:
+                        chosen = top[0]
+                    if chosen == "male":
+                        pool = [result for result in low_candidates if result.get("gender") == labels.get("male")]
+                    elif chosen == "female":
+                        pool = [result for result in low_candidates if result.get("gender") == labels.get("female")]
+                    else:
+                        pool = [result for result in low_candidates if result.get("gender") == labels.get("unknown")]
+                    if pool == []:
+                        pool = low_candidates
+                    if pool == []:
+                        selected = max(normalized, key = self.score_gender_result)
+                    else:
+                        selected = max(pool, key = self.score_gender_result)
+
+        if selected is None:
+            return None
+
+        selected = selected.copy()
+        if vote_summary != "":
+            selected["vote_summary"] = vote_summary
+        if conflict == True and selected.get("vote_conflict") is not True:
+            selected["vote_conflict"] = True
+        return selected
+
     def is_snippet_too_similar(self, text: str, selected: list[dict[str, str | int]], threshold: float) -> bool:
         for item in selected:
             other = str(item.get("text", ""))
@@ -895,12 +1082,23 @@ class NERAnalyzer(Base):
 
     def map_gender_label(self, gender: str) -> str:
         labels = self.get_gender_labels()
-        if gender == "男性人名":
+        if gender == labels.get("male") or gender == "男性人名":
             return labels.get("male")
-        if gender == "女性人名":
+        if gender == labels.get("female") or gender == "女性人名":
             return labels.get("female")
+        if gender == labels.get("unknown"):
+            return labels.get("unknown")
 
         text = str(gender).strip().lower()
+        if (
+            "unknown" in text
+            or "uncertain" in text
+            or "unsure" in text
+            or "not sure" in text
+            or "不确定" in text
+            or "未知" in text
+        ):
+            return labels.get("unknown")
         if "male" in text or "男" in text:
             return labels.get("male")
         if "female" in text or "女" in text:
@@ -1365,13 +1563,23 @@ class NERAnalyzer(Base):
                 confidence = result.get("confidence", "")
                 evidence = result.get("evidence", "")
                 context = result.get("context", "")
+                vote_summary = result.get("vote_summary", "")
+                if isinstance(vote_summary, str) and vote_summary != "":
+                    context = vote_summary if context == "" else f"{vote_summary}\n\n{context}"
                 review_reason = ""
                 evidence_valid = self.is_evidence_valid(evidence)
+                vote_conflict = result.get("vote_conflict") is True
+                gender_is_unknown = gender == labels.get("unknown")
 
                 if gender == "":
                     gender = labels.get("male")
                     confidence = "low"
                     review_reason = "invalid_output"
+                elif vote_conflict:
+                    confidence = "low"
+                    review_reason = "gender_conflict"
+                elif gender_is_unknown:
+                    confidence = "low"
                 elif confidence == "":
                     confidence = "low"
                     review_reason = "invalid_output"
@@ -1934,16 +2142,17 @@ class NERAnalyzer(Base):
 
         return long_result
 
-    def request_gender(
+    def request_gender_for_snippets(
         self,
         entry: dict[str, str | int | list[str]],
         prompt_builder: PromptBuilder,
         prompt_language: BaseLanguage.Enum,
+        snippets: list[dict[str, str | int]] | None,
     ) -> dict[str, str] | None:
         short_budget = max(0, int(self.config.multi_agent_context_budget))
         long_budget = max(0, int(self.config.multi_agent_context_budget_long))
 
-        result = self.request_gender_once(entry, prompt_builder, prompt_language, short_budget)
+        result = self.request_gender_once(entry, prompt_builder, prompt_language, short_budget, snippets)
         needs_retry = self.is_gender_result_invalid(result)
         if (
             needs_retry == False
@@ -1954,10 +2163,33 @@ class NERAnalyzer(Base):
             needs_retry = True
         if needs_retry == True:
             retry_budget = long_budget if long_budget > short_budget else short_budget
-            long_result = self.request_gender_once(entry, prompt_builder, prompt_language, retry_budget)
+            long_result = self.request_gender_once(entry, prompt_builder, prompt_language, retry_budget, snippets)
             result = self.pick_gender_result(result, long_result)
 
         return result
+
+    def request_gender(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+    ) -> dict[str, str] | None:
+        snippets = entry.get("snippets", [])
+        if not isinstance(snippets, list):
+            snippets = []
+        windows = self.get_gender_vote_window_count(entry)
+        if windows >= 2 and snippets != []:
+            groups = self.split_snippets_for_gender_vote(snippets, windows)
+            vote_results: list[dict[str, str]] = []
+            for group in groups:
+                result = self.request_gender_for_snippets(entry, prompt_builder, prompt_language, group)
+                if result is not None:
+                    vote_results.append(result)
+            voted = self.pick_gender_vote_result(entry, vote_results)
+            if voted is not None:
+                return voted
+
+        return self.request_gender_for_snippets(entry, prompt_builder, prompt_language, snippets)
 
     def request_gender_once(
         self,
@@ -1965,12 +2197,11 @@ class NERAnalyzer(Base):
         prompt_builder: PromptBuilder,
         prompt_language: BaseLanguage.Enum,
         budget: int,
+        snippets: list[dict[str, str | int]] | None = None,
     ) -> dict[str, str] | None:
-        context = self.format_snippet_context(
-            entry.get("snippets", []),
-            budget,
-            prompt_language,
-        )
+        if snippets is None:
+            snippets = entry.get("snippets", [])
+        context = self.format_snippet_context(snippets, budget, prompt_language)
         prompt = prompt_builder.build_agent_prompt(
             "gender",
             {
@@ -2061,6 +2292,8 @@ class NERAnalyzer(Base):
                 reason = "高频低置信度"
             elif reason_key == "invalid_evidence":
                 reason = "证据不合格"
+            elif reason_key == "gender_conflict":
+                reason = "性别冲突"
             else:
                 reason = "模型输出异常"
             info = f"{entry.get('info', '')}（需复核：{reason}）"
@@ -2071,6 +2304,8 @@ class NERAnalyzer(Base):
                 reason = "high-frequency low confidence"
             elif reason_key == "invalid_evidence":
                 reason = "invalid evidence"
+            elif reason_key == "gender_conflict":
+                reason = "gender conflict"
             else:
                 reason = "invalid model output"
             info = f"{entry.get('info', '')} (Review: {reason})"
