@@ -1,6 +1,7 @@
 import json
 import re
 import threading
+import time
 from functools import lru_cache
 
 import anthropic
@@ -153,31 +154,46 @@ class TaskRequester(Base):
 
         thinking = self.platform.get("thinking")
 
-        # 发起请求
-        if self.platform.get("api_format") == Base.APIFormat.SAKURALLM:
-            skip, response_think, response_result, input_tokens, output_tokens = self.request_sakura(
-                messages,
-                thinking,
-                args,
-            )
-        elif self.platform.get("api_format") == Base.APIFormat.GOOGLE:
-            skip, response_think, response_result, input_tokens, output_tokens = self.request_google(
-                messages,
-                thinking,
-                args,
-            )
-        elif self.platform.get("api_format") == Base.APIFormat.ANTHROPIC:
-            skip, response_think, response_result, input_tokens, output_tokens = self.request_anthropic(
-                messages,
-                thinking,
-                args,
-            )
-        else:
-            skip, response_think, response_result, input_tokens, output_tokens = self.request_openai(
-                messages,
-                thinking,
-                args,
-            )
+        max_retry = max(0, int(self.config.request_retry_max))
+        backoff_base = max(0, int(self.config.request_retry_backoff))
+        attempts = max_retry + 1
+        skip = True
+        response_think = None
+        response_result = None
+        input_tokens = None
+        output_tokens = None
+
+        for attempt in range(attempts):
+            # 发起请求
+            if self.platform.get("api_format") == Base.APIFormat.SAKURALLM:
+                skip, response_think, response_result, input_tokens, output_tokens = self.request_sakura(
+                    messages,
+                    thinking,
+                    args,
+                )
+            elif self.platform.get("api_format") == Base.APIFormat.GOOGLE:
+                skip, response_think, response_result, input_tokens, output_tokens = self.request_google(
+                    messages,
+                    thinking,
+                    args,
+                )
+            elif self.platform.get("api_format") == Base.APIFormat.ANTHROPIC:
+                skip, response_think, response_result, input_tokens, output_tokens = self.request_anthropic(
+                    messages,
+                    thinking,
+                    args,
+                )
+            else:
+                skip, response_think, response_result, input_tokens, output_tokens = self.request_openai(
+                    messages,
+                    thinking,
+                    args,
+                )
+
+            if skip == False:
+                break
+            if attempt < max_retry and backoff_base > 0:
+                time.sleep(backoff_base * (2 ** attempt))
 
         return skip, response_think, response_result, input_tokens, output_tokens
 

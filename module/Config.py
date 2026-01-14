@@ -40,6 +40,8 @@ class Config():
     max_workers: int = 0
     rpm_threshold: int = 0
     request_timeout: int = 120
+    request_retry_max: int = 3
+    request_retry_backoff: int = 1
     max_round: int = 16
 
     # ExpertSettingsPage
@@ -52,9 +54,12 @@ class Config():
     multi_agent_context_budget_long: int = 8000
     multi_agent_gender_retry_long: bool = True
     multi_agent_gender_high_confidence_min_count: int = 5
+    multi_agent_review_high_freq_min_count: int = 5
     multi_agent_apply_on_export: bool = False
     multi_agent_translate_post: bool = False
     multi_agent_title_filter_enable: bool = False
+    multi_agent_review_arbitrate: bool = False
+    multi_agent_review_arbitrate_apply: bool = True
 
     # ProjectPage
     source_language: BaseLanguage.Enum = BaseLanguage.Enum.JA

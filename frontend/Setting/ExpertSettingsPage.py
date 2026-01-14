@@ -46,7 +46,11 @@ class ExpertSettingsPage(QWidget, Base):
         self.add_widget_multi_agent_context_budget(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_context_budget_long(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_gender_retry_long(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_gender_high_confidence_min_count(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_review_high_freq_min_count(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_title_filter(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_review_arbitrate(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_review_arbitrate_apply(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_translate_post(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_apply_on_export(scroll_area_vbox, config, window)
         self.add_widget_output_choices(scroll_area_vbox, config, window)
@@ -206,6 +210,48 @@ class ExpertSettingsPage(QWidget, Base):
             )
         )
 
+    # 性别判定高置信度计数阈值
+    def add_widget_multi_agent_gender_high_confidence_min_count(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.multi_agent_gender_high_confidence_min_count)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_gender_high_confidence_min_count = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_gender_high_confidence_min_count_title,
+                description = Localizer.get().expert_settings_page_multi_agent_gender_high_confidence_min_count_description,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # 高频证据不足复核阈值
+    def add_widget_multi_agent_review_high_freq_min_count(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.multi_agent_review_high_freq_min_count)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.multi_agent_review_high_freq_min_count = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().expert_settings_page_multi_agent_review_high_freq_min_count_title,
+                description = Localizer.get().expert_settings_page_multi_agent_review_high_freq_min_count_description,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
     # 称谓/头衔硬过滤
     def add_widget_multi_agent_title_filter(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
 
@@ -223,6 +269,50 @@ class ExpertSettingsPage(QWidget, Base):
             SwitchButtonCard(
                 title = Localizer.get().expert_settings_page_multi_agent_title_filter_title,
                 description = Localizer.get().expert_settings_page_multi_agent_title_filter_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 复核仲裁
+    def add_widget_multi_agent_review_arbitrate(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_review_arbitrate
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_review_arbitrate = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_review_arbitrate_title,
+                description = Localizer.get().expert_settings_page_multi_agent_review_arbitrate_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 复核仲裁回填
+    def add_widget_multi_agent_review_arbitrate_apply(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_review_arbitrate_apply
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_review_arbitrate_apply = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_review_arbitrate_apply_title,
+                description = Localizer.get().expert_settings_page_multi_agent_review_arbitrate_apply_description,
                 init = init,
                 checked_changed = checked_changed,
             )

@@ -317,6 +317,12 @@ class TaskPage(QWidget, Base):
             elif stage == "gendering":
                 percent = self.data.get("stage_progress", 0) / max(1, self.data.get("stage_total", 1))
                 status_text = Localizer.get().task_page_status_gendering
+            elif stage == "translating":
+                percent = self.data.get("stage_progress", 0) / max(1, self.data.get("stage_total", 1))
+                status_text = Localizer.get().task_page_status_translating
+            elif stage == "arbitrating":
+                percent = self.data.get("stage_progress", 0) / max(1, self.data.get("stage_total", 1))
+                status_text = Localizer.get().task_page_status_arbitrating
             else:
                 percent = self.data.get("line", 0) / max(1, self.data.get("total_line", 0))
                 status_text = Localizer.get().task_page_status_nering

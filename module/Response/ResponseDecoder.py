@@ -157,3 +157,33 @@ class ResponseDecoder(Base):
             )
 
         return results
+
+    # 解析复核仲裁结果
+    def decode_arbiter(self, response: str) -> list[dict[str, str | bool]]:
+        results: list[dict[str, str | bool]] = []
+
+        for json_data in self._iter_json_objects(response):
+            if "src" not in json_data:
+                continue
+            keep_raw = json_data.get("keep", json_data.get("decision", json_data.get("result")))
+            keep = self._coerce_bool(keep_raw)
+            info_raw = json_data.get("info", json_data.get("type"))
+            info_text = info_raw if isinstance(info_raw, str) else ("" if info_raw is None else str(info_raw))
+            normalized_gender = self._normalize_gender(info_text)
+            if normalized_gender is not None:
+                info_text = normalized_gender
+            confidence = self._normalize_confidence(json_data.get("confidence", json_data.get("conf")))
+            evidence = json_data.get("evidence", "")
+            reason = json_data.get("reason", "")
+            results.append(
+                {
+                    "src": json_data.get("src") if isinstance(json_data.get("src"), str) else "",
+                    "keep": keep,
+                    "info": info_text,
+                    "confidence": confidence,
+                    "evidence": evidence if isinstance(evidence, str) else str(evidence),
+                    "reason": reason if isinstance(reason, str) else str(reason),
+                }
+            )
+
+        return results

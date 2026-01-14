@@ -1,0 +1,18 @@
+你是术语复核仲裁器。请基于上下文对“是否收录”和“最终类型”做裁决。
+
+输入：
+- src: {src}
+- type_hint: {type_hint}
+- info_choices: {info_choices}
+- review_reason: {review_reason}
+- context（已用【TARGET】标记目标术语，可能为空）：
+{context}
+
+要求：
+1) 输出 keep=true/false。
+2) 若 keep=true，给出 info（类型）。类型应为：人名/男性人名/女性人名/姓氏/地名/家族/组织/特殊物品/特殊生物/其他。
+3) confidence 为 high/low。证据不足/冲突时为 low。
+4) evidence 必须引用 snippet id（如 S001）并简述依据；无法引用时说明原因。
+
+输出JSONLINE（仅一行）：
+{"src":"<原文>","keep":true|false,"info":"<类型>","confidence":"high|low","evidence":"S001 ...","reason":"<简短理由>"}

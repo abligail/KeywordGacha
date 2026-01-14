@@ -821,6 +821,61 @@ class NERAnalyzer(Base):
         text = info.strip().lower()
         return "人名" in text or "name" in text
 
+    def normalize_info_category(self, info: str) -> str:
+        if not isinstance(info, str):
+            return ""
+        text = info.strip().lower()
+        if text == "":
+            return ""
+        if "姓" in text or "surname" in text or "family name" in text:
+            return "surname"
+        if "人名" in text or "name" in text:
+            return "person"
+        if "地名" in text or "place" in text or "location" in text or "city" in text or "country" in text or "town" in text:
+            return "place"
+        if "组织" in text or "organisation" in text or "organization" in text or "guild" in text or "団" in text or "團" in text:
+            return "org"
+        if "家族" in text or "family" in text or "clan" in text:
+            return "family"
+        if "物品" in text or "道具" in text or "item" in text:
+            return "item"
+        if "生物" in text or "种族" in text or "種族" in text or "creature" in text or "species" in text:
+            return "creature"
+        if "其他" in text or "other" in text:
+            return "other"
+        return "other"
+
+    def get_info_categories(self, entry: dict[str, str | int | list[str]]) -> set[str]:
+        choices = entry.get("info_choices")
+        if isinstance(choices, set):
+            items = choices
+        elif isinstance(choices, list):
+            items = choices
+        else:
+            items = [entry.get("info", "")]
+
+        categories: set[str] = set()
+        for info in items:
+            category = self.normalize_info_category(info if isinstance(info, str) else str(info))
+            if category != "" and category != "other":
+                categories.add(category)
+
+        return categories
+
+    def has_type_conflict(self, entry: dict[str, str | int | list[str]]) -> bool:
+        return len(self.get_info_categories(entry)) >= 2
+
+    def format_info_choices(self, entry: dict[str, str | int | list[str]]) -> str:
+        choices = entry.get("info_choices")
+        if isinstance(choices, set):
+            values = choices
+        elif isinstance(choices, list):
+            values = choices
+        else:
+            values = [entry.get("info", "")]
+        clean = sorted({str(v).strip() for v in values if str(v).strip() != ""})
+        return ", ".join(clean)
+
     def is_unknown_gender(self, info: str) -> bool:
         if not isinstance(info, str):
             return False
@@ -878,6 +933,28 @@ class NERAnalyzer(Base):
         snippets = entry.get("snippets", [])
         return isinstance(snippets, list) and len(snippets) > 0
 
+    def is_reason_insufficient(self, reason: str) -> bool:
+        if not isinstance(reason, str):
+            return False
+        text = reason.strip().lower()
+        if text == "":
+            return False
+        return any(token in text for token in __class__.VALIDATOR_RETRY_KEYWORDS)
+
+    def should_review_insufficient(self, entry: dict[str, str | int | list[str]]) -> bool:
+        threshold = max(0, int(self.config.multi_agent_review_high_freq_min_count))
+        if threshold <= 0:
+            return False
+        count = entry.get("count", 0)
+        try:
+            count_value = int(count)
+        except Exception:
+            count_value = 0
+        if count_value < threshold:
+            return False
+        reason = entry.get("validator_reason", "")
+        return self.is_reason_insufficient(reason)
+
     def is_gender_result_invalid(self, result: dict[str, str] | None) -> bool:
         if not isinstance(result, dict):
             return True
@@ -891,6 +968,20 @@ class NERAnalyzer(Base):
         if not isinstance(result, dict):
             return True
         if result.get("dst", "") == "":
+            return True
+        return False
+
+    def is_review_arbiter_result_invalid(self, result: dict[str, str | bool] | None) -> bool:
+        if not isinstance(result, dict):
+            return True
+        if result.get("keep") is None:
+            return True
+        if result.get("confidence", "") == "":
+            return True
+        keep = result.get("keep") is True
+        if keep == True and result.get("info", "") == "":
+            return True
+        if self.is_evidence_valid(result.get("evidence", "")) == False:
             return True
         return False
 
@@ -962,7 +1053,26 @@ class NERAnalyzer(Base):
             self.reset_agent_usage()
             glossary, translator_review_entries = self.run_translator(glossary, prompt_builder, prompt_language, max_workers, rpm_threshold)
             self.flush_agent_usage()
-        review_entries = self.merge_review_entries(title_review_entries, validator_review_entries, gender_review_entries, translator_review_entries)
+        extra_review_entries = self.collect_review_entries(glossary, prompt_language)
+        review_entries = self.merge_review_entries(
+            title_review_entries,
+            validator_review_entries,
+            gender_review_entries,
+            translator_review_entries,
+            extra_review_entries,
+        )
+        if self.config.multi_agent_review_arbitrate == True:
+            self.reset_agent_usage()
+            glossary, arbiter_review_entries = self.run_review_arbiter(
+                glossary,
+                review_entries,
+                prompt_builder,
+                prompt_language,
+                max_workers,
+                rpm_threshold,
+            )
+            self.flush_agent_usage()
+            review_entries = self.merge_review_entries(review_entries, arbiter_review_entries)
 
         for entry in glossary:
             entry.pop("snippets", None)
@@ -997,10 +1107,51 @@ class NERAnalyzer(Base):
                         context,
                     )
                 )
-            else:
-                kept.append(entry)
+            kept.append(entry)
 
         return kept, review_entries
+
+    def collect_review_entries(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        prompt_language: BaseLanguage.Enum,
+    ) -> list[dict[str, str]]:
+        if glossary == []:
+            return []
+
+        budget = max(0, int(self.config.multi_agent_context_budget))
+        review_entries: list[dict[str, str]] = []
+
+        for entry in glossary:
+            if self.has_type_conflict(entry):
+                context = self.format_snippet_context(entry.get("snippets", []), budget, prompt_language)
+                choices = self.format_info_choices(entry)
+                if choices != "":
+                    context = f"info_choices={choices}\n\n{context}"
+                review_entries.append(
+                    self.build_validator_review_entry(
+                        entry,
+                        prompt_language,
+                        "type_conflict",
+                        context,
+                    )
+                )
+
+            if self.should_review_insufficient(entry):
+                context = self.format_snippet_context(entry.get("snippets", []), budget, prompt_language)
+                reason = entry.get("validator_reason", "")
+                if isinstance(reason, str) and reason.strip() != "":
+                    context = f"validator_reason={reason.strip()}\n\n{context}"
+                review_entries.append(
+                    self.build_validator_review_entry(
+                        entry,
+                        prompt_language,
+                        "insufficient_evidence",
+                        context,
+                    )
+                )
+
+        return review_entries
 
     def reset_agent_usage(self) -> None:
         with self.agent_usage_lock:
@@ -1119,6 +1270,8 @@ class NERAnalyzer(Base):
         for entry in glossary:
             decision = results.get(entry.get("src"))
             if isinstance(decision, dict):
+                if decision.get("reason"):
+                    entry["validator_reason"] = decision.get("reason")
                 if decision.get("keep") is False:
                     continue
                 if decision.get("keep") is None:
@@ -1130,9 +1283,8 @@ class NERAnalyzer(Base):
                             str(decision.get("context", "")),
                         )
                     )
+                    kept.append(entry)
                     continue
-                if decision.get("reason"):
-                    entry["validator_reason"] = decision.get("reason")
                 kept.append(entry)
             else:
                 review_entries.append(
@@ -1143,6 +1295,7 @@ class NERAnalyzer(Base):
                         "",
                     )
                 )
+                kept.append(entry)
 
         return kept, review_entries
 
@@ -1185,7 +1338,6 @@ class NERAnalyzer(Base):
         review_entries: list[dict[str, str]] = []
         labels = self.get_gender_labels()
         min_high_count = max(0, int(self.config.multi_agent_gender_high_confidence_min_count))
-        allow_low_without_review = self.config.multi_agent_review_output != True
 
         kept: list[dict[str, str | int | list[str]]] = []
         for entry in glossary:
@@ -1229,18 +1381,16 @@ class NERAnalyzer(Base):
             if confidence != "high":
                 if review_reason == "":
                     review_reason = "low_confidence"
-                review_entries.append(
-                    self.build_review_entry(entry, prompt_language, review_reason, evidence, context)
-                )
-
                 count = entry.get("count", 0)
                 try:
                     count_value = int(count)
                 except Exception:
                     count_value = 0
-                require_high = min_high_count > 0 and count_value >= min_high_count
-                if require_high == True and allow_low_without_review == False:
-                    continue
+                if min_high_count > 0 and count_value >= min_high_count:
+                    review_reason = "low_confidence_high_count"
+                review_entries.append(
+                    self.build_review_entry(entry, prompt_language, review_reason, evidence, context)
+                )
 
             kept.append(entry)
 
@@ -1355,6 +1505,221 @@ class NERAnalyzer(Base):
                 dst_choices.discard("")
 
         return glossary, review_entries
+
+    def run_review_arbiter(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        review_entries: list[dict[str, str]],
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        max_workers: int,
+        rpm_threshold: int,
+    ) -> tuple[list[dict[str, str | int | list[str]]], list[dict[str, str]]]:
+        if glossary == [] or review_entries == []:
+            return glossary, []
+        if self.config.multi_agent_review_arbitrate != True:
+            return glossary, []
+
+        review_reason_map = self.build_review_reason_map(review_entries)
+        if review_reason_map == {}:
+            return glossary, []
+
+        glossary_map = {entry.get("src", ""): entry for entry in glossary if entry.get("src", "") != ""}
+        candidates = [glossary_map.get(src) for src in review_reason_map.keys() if glossary_map.get(src) is not None]
+        if candidates == []:
+            return glossary, []
+
+        task_limiter = TaskLimiter(rps = max_workers, rpm = rpm_threshold)
+        results: dict[str, dict[str, str | bool]] = {}
+
+        self.emit_stage_progress("arbitrating", 0, len(candidates))
+        with ProgressBar(transient = True) as progress:
+            pid = progress.new()
+            with concurrent.futures.ThreadPoolExecutor(max_workers = max_workers, thread_name_prefix = Engine.TASK_PREFIX) as executor:
+                futures = []
+                for entry in candidates:
+                    task_limiter.wait()
+                    reason = review_reason_map.get(entry.get("src", ""), "")
+                    futures.append(executor.submit(self.request_review_arbiter, entry, reason, prompt_builder, prompt_language))
+
+                completed_count = 0
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    if isinstance(result, dict) and result.get("src"):
+                        results[result.get("src")] = result
+                    completed_count += 1
+                    progress.update(pid, advance = 1, total = len(futures))
+                    self.emit_stage_progress("arbitrating", completed_count, len(futures))
+
+        apply_to_main = self.config.multi_agent_review_arbitrate_apply == True
+        arbiter_review_entries: list[dict[str, str]] = []
+        for entry in candidates:
+            result = results.get(entry.get("src"))
+            if result is None:
+                arbiter_review_entries.append(
+                    self.build_arbiter_review_entry(entry, prompt_language, "arbiter_missing", "", "")
+                )
+                continue
+
+            if self.is_review_arbiter_result_invalid(result):
+                arbiter_review_entries.append(
+                    self.build_arbiter_review_entry(entry, prompt_language, "arbiter_invalid", result.get("evidence", ""), result.get("context", ""))
+                )
+                continue
+
+            keep = result.get("keep") is True
+            confidence = result.get("confidence", "")
+            evidence = result.get("evidence", "")
+            context = result.get("context", "")
+            arbiter_reason = result.get("reason", "")
+            if isinstance(arbiter_reason, str) and arbiter_reason.strip() != "":
+                context = f"arbiter_reason={arbiter_reason.strip()}\n\n{context}" if context != "" else f"arbiter_reason={arbiter_reason.strip()}"
+
+            if keep == False:
+                arbiter_review_entries.append(
+                    self.build_arbiter_review_entry(entry, prompt_language, "arbiter_keep_false", evidence, context)
+                )
+            elif confidence != "high":
+                arbiter_review_entries.append(
+                    self.build_arbiter_review_entry(entry, prompt_language, "arbiter_low_confidence", evidence, context)
+                )
+
+            if apply_to_main == True and keep == True and confidence == "high":
+                info = result.get("info", "")
+                info = info if isinstance(info, str) else str(info)
+                info = info.strip()
+                mapped = self.map_gender_label(info)
+                if mapped != "":
+                    info = mapped
+                if info != "":
+                    entry["info"] = info
+                    info_choices = entry.get("info_choices")
+                    if isinstance(info_choices, set):
+                        info_choices.add(info)
+
+        return glossary, arbiter_review_entries
+
+    def request_review_arbiter(
+        self,
+        entry: dict[str, str | int | list[str]],
+        review_reason: str,
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+    ) -> dict[str, str | bool] | None:
+        short_budget = max(0, int(self.config.multi_agent_context_budget))
+        long_budget = max(0, int(self.config.multi_agent_context_budget_long))
+
+        short_result = self.request_review_arbiter_once(entry, review_reason, prompt_builder, prompt_language, short_budget)
+        needs_retry = self.is_review_arbiter_result_invalid(short_result)
+        if needs_retry == False and short_result is not None and short_result.get("confidence") != "high":
+            needs_retry = True
+
+        if needs_retry == True:
+            retry_budget = long_budget if long_budget > short_budget else short_budget
+            long_result = self.request_review_arbiter_once(entry, review_reason, prompt_builder, prompt_language, retry_budget)
+            return self.pick_review_arbiter_result(short_result, long_result)
+
+        return short_result
+
+    def request_review_arbiter_once(
+        self,
+        entry: dict[str, str | int | list[str]],
+        review_reason: str,
+        prompt_builder: PromptBuilder,
+        prompt_language: BaseLanguage.Enum,
+        budget: int,
+    ) -> dict[str, str | bool] | None:
+        context = self.format_snippet_context(
+            entry.get("snippets", []),
+            budget,
+            prompt_language,
+        )
+        info_choices = self.format_info_choices(entry)
+        prompt = prompt_builder.build_agent_prompt(
+            "arbiter",
+            {
+                "src": entry.get("src", ""),
+                "type_hint": entry.get("info", ""),
+                "info_choices": info_choices,
+                "review_reason": review_reason,
+                "context": context,
+            },
+        )
+        if prompt == "":
+            return None
+
+        requester = TaskRequester(self.config, self.platform)
+        skip, response_think, response_result, input_tokens, output_tokens = requester.request([
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ])
+        self.record_agent_usage(input_tokens, output_tokens)
+        if skip == False and response_result is not None:
+            self.log_agent_response("arbiter", str(entry.get("src", "")), response_think, response_result, input_tokens, output_tokens)
+        if skip == True or response_result is None:
+            self.warning(f"[arbiter] request_failed src={entry.get('src', '')}")
+            return {
+                "src": entry.get("src", ""),
+                "keep": None,
+                "info": "",
+                "confidence": "",
+                "evidence": "",
+                "context": context,
+            }
+
+        results = ResponseDecoder().decode_arbiter(response_result)
+        if results != []:
+            result = results[0]
+            if result.get("src", "") == "":
+                result["src"] = entry.get("src", "")
+            result["context"] = context
+            return result
+
+        return {
+            "src": entry.get("src", ""),
+            "keep": None,
+            "info": "",
+            "confidence": "",
+            "evidence": "",
+            "context": context,
+        }
+
+    def pick_review_arbiter_result(
+        self,
+        short_result: dict[str, str | bool] | None,
+        long_result: dict[str, str | bool] | None,
+    ) -> dict[str, str | bool] | None:
+        if long_result is None:
+            return short_result
+        if short_result is None:
+            return long_result
+
+        short_invalid = self.is_review_arbiter_result_invalid(short_result)
+        long_invalid = self.is_review_arbiter_result_invalid(long_result)
+        if short_invalid == True and long_invalid == False:
+            return long_result
+        if long_invalid == True and short_invalid == False:
+            return short_result
+        if short_invalid == True and long_invalid == True:
+            return long_result
+
+        short_confidence = short_result.get("confidence", "")
+        long_confidence = long_result.get("confidence", "")
+        if short_confidence != "high" and long_confidence == "high":
+            return long_result
+        if short_confidence == "high" and long_confidence != "high":
+            return short_result
+
+        short_keep = short_result.get("keep") is True
+        long_keep = long_result.get("keep") is True
+        if short_keep == False and long_keep == True:
+            return long_result
+        if short_keep == True and long_keep == False:
+            return short_result
+
+        return short_result
 
     def request_translator(
         self,
@@ -1684,6 +2049,8 @@ class NERAnalyzer(Base):
         if prompt_language == BaseLanguage.Enum.ZH:
             if reason_key == "low_confidence":
                 reason = "证据不足/冲突"
+            elif reason_key == "low_confidence_high_count":
+                reason = "高频低置信度"
             elif reason_key == "invalid_evidence":
                 reason = "证据不合格"
             else:
@@ -1692,6 +2059,8 @@ class NERAnalyzer(Base):
         else:
             if reason_key == "low_confidence":
                 reason = "insufficient/conflicting evidence"
+            elif reason_key == "low_confidence_high_count":
+                reason = "high-frequency low confidence"
             elif reason_key == "invalid_evidence":
                 reason = "invalid evidence"
             else:
@@ -1753,6 +2122,19 @@ class NERAnalyzer(Base):
             "review_context": context,
         }
 
+    def build_arbiter_review_entry(
+        self,
+        entry: dict[str, str | int | list[str]],
+        prompt_language: BaseLanguage.Enum,
+        reason_key: str,
+        evidence: str,
+        context: str,
+    ) -> dict[str, str]:
+        review_entry = self.build_validator_review_entry(entry, prompt_language, reason_key, context)
+        if isinstance(evidence, str) and evidence != "":
+            review_entry["review_evidence"] = evidence
+        return review_entry
+
     def build_validator_review_entry(
         self,
         entry: dict[str, str | int | list[str]],
@@ -1771,6 +2153,18 @@ class NERAnalyzer(Base):
                 reason = "验证结果缺失"
             elif reason_key == "title_filtered":
                 reason = "称谓/头衔过滤"
+            elif reason_key == "type_conflict":
+                reason = "类型冲突"
+            elif reason_key == "insufficient_evidence":
+                reason = "证据不足"
+            elif reason_key == "arbiter_keep_false":
+                reason = "仲裁建议剔除"
+            elif reason_key == "arbiter_low_confidence":
+                reason = "仲裁低置信度"
+            elif reason_key == "arbiter_invalid":
+                reason = "仲裁输出异常"
+            elif reason_key == "arbiter_missing":
+                reason = "仲裁结果缺失"
             else:
                 reason = "验证失败"
                 reason_detail = reason_key
@@ -1784,6 +2178,18 @@ class NERAnalyzer(Base):
                 reason = "validator result missing"
             elif reason_key == "title_filtered":
                 reason = "title/honorific filtered"
+            elif reason_key == "type_conflict":
+                reason = "type conflict"
+            elif reason_key == "insufficient_evidence":
+                reason = "insufficient evidence"
+            elif reason_key == "arbiter_keep_false":
+                reason = "arbiter suggests removal"
+            elif reason_key == "arbiter_low_confidence":
+                reason = "arbiter low confidence"
+            elif reason_key == "arbiter_invalid":
+                reason = "arbiter output invalid"
+            elif reason_key == "arbiter_missing":
+                reason = "arbiter result missing"
             else:
                 reason = "validator failed"
                 reason_detail = reason_key
@@ -1833,6 +2239,19 @@ class NERAnalyzer(Base):
                 if merged_entry.get("dst", "") == "" and entry.get("dst", "") != "":
                     merged_entry["dst"] = entry.get("dst", "")
         return list(merged.values())
+
+    def build_review_reason_map(self, review_entries: list[dict[str, str]]) -> dict[str, str]:
+        reason_map: dict[str, str] = {}
+        for entry in review_entries:
+            src = entry.get("src", "")
+            if src == "":
+                continue
+            reason_map[src] = self.merge_review_text(
+                reason_map.get(src, ""),
+                entry.get("review_reason", ""),
+                " | ",
+            )
+        return reason_map
 
     def merge_review_text(self, left: str, right: str, sep: str) -> str:
         left = "" if left is None else str(left)

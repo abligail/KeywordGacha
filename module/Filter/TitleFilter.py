@@ -1,5 +1,3 @@
-import re
-
 class TitleFilter:
     EXACT: tuple[str, ...] = (
         "先生",
@@ -52,29 +50,6 @@ class TitleFilter:
         "夫君",
         "殿",
     )
-    SUFFIXES: tuple[str, ...] = (
-        "さん",
-        "さま",
-        "様",
-        "殿",
-        "どの",
-        "ちゃん",
-        "くん",
-        "君",
-        "先輩",
-        "後輩",
-        "先生",
-        "師匠",
-        "殿下",
-        "陛下",
-        "閣下",
-        "阁下",
-    )
-    _SUFFIX_RE: re.Pattern = re.compile(
-        r"(?:%s)$" % "|".join(re.escape(v) for v in SUFFIXES),
-        flags = re.IGNORECASE,
-    )
-
     @classmethod
     def filter(cls, src: str) -> bool:
         if not isinstance(src, str):
@@ -84,4 +59,4 @@ class TitleFilter:
             return False
         if text in cls.EXACT:
             return True
-        return cls._SUFFIX_RE.search(text) is not None
+        return False

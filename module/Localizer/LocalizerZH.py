@@ -191,6 +191,7 @@ class LocalizerZH():
     task_page_status_validating: str = "验证中"
     task_page_status_gendering: str = "性别判定中"
     task_page_status_translating: str = "翻译中"
+    task_page_status_arbitrating: str = "仲裁中"
     task_page_status_stopping: str = "停止中"
     task_page_indeterminate_saving: str = "缓存保存中 …"
     task_page_indeterminate_stoping: str = "正在停止任务 …"
@@ -233,6 +234,18 @@ class LocalizerZH():
         ""
         ""
     )
+    basic_settings_page_request_retry_max_title: str = "请求重试次数"
+    basic_settings_page_request_retry_max_content: str = (
+        "请求失败后的额外重试次数（总次数 = 重试次数 + 1）"
+        ""
+        ""
+    )
+    basic_settings_page_request_retry_backoff_title: str = "重试退避基数（秒）"
+    basic_settings_page_request_retry_backoff_content: str = (
+        "指数退避的基础等待时间（1、2、4… 秒）"
+        ""
+        ""
+    )
     basic_settings_page_max_round_title: str = "任务轮次阈值"
     basic_settings_page_max_round_content: str = "当完成一轮任务后，将在新的轮次中对失败的任务进行重试，直到全部完成或达到轮次阈值"
 
@@ -253,8 +266,16 @@ class LocalizerZH():
     expert_settings_page_multi_agent_context_budget_long_description: str = "加长档上下文字符预算（约 8k）"
     expert_settings_page_multi_agent_gender_retry_title: str = "低置信度重试（长上下文）"
     expert_settings_page_multi_agent_gender_retry_description: str = "性别判定低置信度时使用加长上下文重跑"
+    expert_settings_page_multi_agent_gender_high_confidence_min_count_title: str = "高置信度计数阈值"
+    expert_settings_page_multi_agent_gender_high_confidence_min_count_description: str = "用于标记高频低置信度人名的计数阈值"
+    expert_settings_page_multi_agent_review_high_freq_min_count_title: str = "高频证据不足阈值"
+    expert_settings_page_multi_agent_review_high_freq_min_count_description: str = "当出现次数达到该阈值且证据不足时进入复核"
     expert_settings_page_multi_agent_title_filter_title: str = "称谓/头衔硬过滤"
-    expert_settings_page_multi_agent_title_filter_description: str = "过滤称谓、头衔或敬称类条目（仅进入复核文件）"
+    expert_settings_page_multi_agent_title_filter_description: str = "标记称谓、头衔或敬称类条目（进入复核文件）"
+    expert_settings_page_multi_agent_review_arbitrate_title: str = "复核仲裁"
+    expert_settings_page_multi_agent_review_arbitrate_description: str = "对复核条目再调用模型进行仲裁"
+    expert_settings_page_multi_agent_review_arbitrate_apply_title: str = "仲裁结果回填主表"
+    expert_settings_page_multi_agent_review_arbitrate_apply_description: str = "仲裁为高置信度时自动更新主表字段"
     expert_settings_page_multi_agent_export_title: str = "导出时执行多 Agent"
     expert_settings_page_multi_agent_export_description: str = "点击导出时也执行验证与性别补全（会增加调用量）"
     expert_settings_page_multi_agent_translate_post_title: str = "翻译后置"

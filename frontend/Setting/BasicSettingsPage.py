@@ -44,6 +44,8 @@ class BasicSettingsPage(QWidget, Base):
         self.add_widget_token_threshold(scroll_area_vbox, config, window)
         self.add_widget_max_output_tokens(scroll_area_vbox, config, window)
         self.add_widget_request_timeout(scroll_area_vbox, config, window)
+        self.add_widget_request_retry_max(scroll_area_vbox, config, window)
+        self.add_widget_request_retry_backoff(scroll_area_vbox, config, window)
         self.add_widget_max_round(scroll_area_vbox, config, window)
 
         # 填充
@@ -149,6 +151,48 @@ class BasicSettingsPage(QWidget, Base):
             SpinCard(
                 title = Localizer.get().basic_settings_page_request_timeout_title,
                 description = Localizer.get().basic_settings_page_request_timeout_content,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # 请求重试次数
+    def add_widget_request_retry_max(self, parent: QLayout, config: Config, window: FluentWindow)-> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.request_retry_max)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.request_retry_max = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().basic_settings_page_request_retry_max_title,
+                description = Localizer.get().basic_settings_page_request_retry_max_content,
+                init = init,
+                value_changed = value_changed,
+            )
+        )
+
+    # 请求重试退避
+    def add_widget_request_retry_backoff(self, parent: QLayout, config: Config, window: FluentWindow)-> None:
+
+        def init(widget: SpinCard) -> None:
+            widget.get_spin_box().setRange(0, 9999999)
+            widget.get_spin_box().setValue(config.request_retry_backoff)
+
+        def value_changed(widget: SpinCard) -> None:
+            config = Config().load()
+            config.request_retry_backoff = widget.get_spin_box().value()
+            config.save()
+
+        parent.addWidget(
+            SpinCard(
+                title = Localizer.get().basic_settings_page_request_retry_backoff_title,
+                description = Localizer.get().basic_settings_page_request_retry_backoff_content,
                 init = init,
                 value_changed = value_changed,
             )

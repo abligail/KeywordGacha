@@ -191,6 +191,7 @@ class LocalizerEN(LocalizerZH):
     task_page_status_validating: str = "Validating"
     task_page_status_gendering: str = "Gender Detecting"
     task_page_status_translating: str = "Translating"
+    task_page_status_arbitrating: str = "Arbitrating"
     task_page_status_stopping: str = "Stopping"
     task_page_indeterminate_saving: str = "Saving cache …"
     task_page_indeterminate_stoping: str = "Stopping task …"
@@ -233,6 +234,14 @@ class LocalizerEN(LocalizerZH):
         "<br>"
         "If no reply is received after the timeout, the task will be considered failed"
     )
+    basic_settings_page_request_retry_max_title: str = "Request Retry Count"
+    basic_settings_page_request_retry_max_content: str = (
+        "Number of additional retries after a request failure (total attempts = retries + 1)"
+    )
+    basic_settings_page_request_retry_backoff_title: str = "Retry Backoff Base (Seconds)"
+    basic_settings_page_request_retry_backoff_content: str = (
+        "Base delay for exponential backoff between retries (1, 2, 4... seconds)"
+    )
     basic_settings_page_max_round_title: str = "Maximum Rounds"
     basic_settings_page_max_round_content: str = "After completing a round of tasks, failed tasks will be retried in a new round until all are completed or the round threshold is reached"
 
@@ -253,8 +262,16 @@ class LocalizerEN(LocalizerZH):
     expert_settings_page_multi_agent_context_budget_long_description: str = "Character budget for the long context pass"
     expert_settings_page_multi_agent_gender_retry_title: str = "Retry Low-Confidence Gender"
     expert_settings_page_multi_agent_gender_retry_description: str = "Retry gender classification with long context when confidence is low"
+    expert_settings_page_multi_agent_gender_high_confidence_min_count_title: str = "High-Confidence Count Threshold"
+    expert_settings_page_multi_agent_gender_high_confidence_min_count_description: str = "Count threshold for marking high-frequency low-confidence names"
+    expert_settings_page_multi_agent_review_high_freq_min_count_title: str = "High-Frequency Evidence Threshold"
+    expert_settings_page_multi_agent_review_high_freq_min_count_description: str = "Send to review when count meets threshold and evidence is insufficient"
     expert_settings_page_multi_agent_title_filter_title: str = "Hard Filter Titles/Honorifics"
-    expert_settings_page_multi_agent_title_filter_description: str = "Filter honorific/title entries (review file only)"
+    expert_settings_page_multi_agent_title_filter_description: str = "Mark honorific/title entries (review file)"
+    expert_settings_page_multi_agent_review_arbitrate_title: str = "Review Arbitration"
+    expert_settings_page_multi_agent_review_arbitrate_description: str = "Run an additional model pass to arbitrate review items"
+    expert_settings_page_multi_agent_review_arbitrate_apply_title: str = "Apply Arbitration to Main Output"
+    expert_settings_page_multi_agent_review_arbitrate_apply_description: str = "Auto-apply high-confidence arbitration results to the main output"
     expert_settings_page_multi_agent_export_title: str = "Apply Multi-Agent on Export"
     expert_settings_page_multi_agent_export_description: str = "Run validation and gender completion when exporting (more API calls)"
     expert_settings_page_multi_agent_translate_post_title: str = "Post-Translate Glossary"

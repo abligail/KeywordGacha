@@ -1,0 +1,18 @@
+You are a glossary review arbiter. Decide whether the entry should be kept and its final type based on context.
+
+Input:
+- src: {src}
+- type_hint: {type_hint}
+- info_choices: {info_choices}
+- review_reason: {review_reason}
+- context (target term is marked with 【TARGET】, may be empty):
+{context}
+
+Requirements:
+1) Output keep=true/false.
+2) If keep=true, provide info (type). Types should be one of: Person Name/Male Name/Female Name/Surname/Place/Family/Organization/Special Item/Special Creature/Other.
+3) confidence must be high/low. Use low when evidence is insufficient or conflicting.
+4) evidence must cite a snippet id (e.g., S001) with a short justification; if you cannot cite, explain why.
+
+Output JSONLINE (single line):
+{"src":"<source>","keep":true|false,"info":"<type>","confidence":"high|low","evidence":"S001 ...","reason":"<short reason>"}
