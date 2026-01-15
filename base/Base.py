@@ -81,24 +81,24 @@ class Base():
         pass
 
     # PRINT
-    def print(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
-        LogManager.get().print(msg, e, file, console)
+    def print(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
+        LogManager.get().print(msg, e, file, console, markup)
 
     # DEBUG
-    def debug(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
-        LogManager.get().debug(msg, e, file, console)
+    def debug(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
+        LogManager.get().debug(msg, e, file, console, markup)
 
     # INFO
-    def info(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
-        LogManager.get().info(msg, e, file, console)
+    def info(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
+        LogManager.get().info(msg, e, file, console, markup)
 
     # ERROR
-    def error(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
-        LogManager.get().error(msg, e, file, console)
+    def error(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
+        LogManager.get().error(msg, e, file, console, markup)
 
     # WARNING
-    def warning(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
-        LogManager.get().warning(msg, e, file, console)
+    def warning(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
+        LogManager.get().warning(msg, e, file, console, markup)
 
     # 触发事件
     def emit(self, event: Event, data: dict) -> None:

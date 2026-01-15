@@ -67,7 +67,7 @@ class APITester(Base):
         requester = TaskRequester(config, platform)
         for key in platform.get("api_key"):
             self.print("")
-            self.info(Localizer.get().api_tester_key + "\n" + f"[green]{key}[/]")
+            self.info(Localizer.get().api_tester_key + "\n" + f"[green]{key}[/]", markup = True)
             self.info(Localizer.get().api_tester_messages + "\n" + f"{messages}")
             skip, response_think, response_result, _, _ = requester.request(messages)
 

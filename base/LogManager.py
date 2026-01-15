@@ -6,6 +6,7 @@ from typing import Self
 
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape as rich_escape
 
 class LogManager():
 
@@ -61,65 +62,68 @@ class LogManager():
 
         return self.expert_mode
 
-    def print(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
+    def _format_console_log(self, msg: str, markup: bool) -> str:
+        return msg if markup == True else rich_escape(msg)
+
+    def print(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
         msg_e: str = f"{msg} {e}" if msg != "" else f"{e}"
         if e == None:
             self.file_logger.info(f"{msg}") if file == True else None
-            self.console.print(f"{msg}") if console == True else None
+            self.console.print(f"{msg}", markup = markup) if console == True else None
         elif self.is_expert_mode() == False:
             self.file_logger.info(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console.print(msg_e) if console == True else None
+            self.console.print(msg_e, markup = markup) if console == True else None
         else:
             self.file_logger.info(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console.print(f"{msg_e}\n{self.get_trackback(e)}\n") if console == True else None
+            self.console.print(f"{msg_e}\n{self.get_trackback(e)}\n", markup = markup) if console == True else None
 
-    def debug(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
+    def debug(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
         msg_e: str = f"{msg} {e}" if msg != "" else f"{e}"
         if e == None:
             self.file_logger.debug(f"{msg}") if file == True else None
-            self.console_logger.debug(f"{msg}") if console == True else None
+            self.console_logger.debug(self._format_console_log(f"{msg}", markup)) if console == True else None
         elif self.is_expert_mode() == False:
             self.file_logger.debug(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.debug(msg_e) if console == True else None
+            self.console_logger.debug(self._format_console_log(msg_e, markup)) if console == True else None
         else:
             self.file_logger.debug(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.debug(f"{msg_e}\n{self.get_trackback(e)}\n") if console == True else None
+            self.console_logger.debug(self._format_console_log(f"{msg_e}\n{self.get_trackback(e)}\n", markup)) if console == True else None
 
-    def info(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
+    def info(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
         msg_e: str = f"{msg} {e}" if msg != "" else f"{e}"
         if e == None:
             self.file_logger.info(f"{msg}") if file == True else None
-            self.console_logger.info(f"{msg}") if console == True else None
+            self.console_logger.info(self._format_console_log(f"{msg}", markup)) if console == True else None
         elif self.is_expert_mode() == False:
             self.file_logger.info(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.info(msg_e) if console == True else None
+            self.console_logger.info(self._format_console_log(msg_e, markup)) if console == True else None
         else:
             self.file_logger.info(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.info(f"{msg_e}\n{self.get_trackback(e)}\n") if console == True else None
+            self.console_logger.info(self._format_console_log(f"{msg_e}\n{self.get_trackback(e)}\n", markup)) if console == True else None
 
-    def error(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
+    def error(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
         msg_e: str = f"{msg} {e}" if msg != "" else f"{e}"
         if e == None:
             self.file_logger.error(f"{msg}") if file == True else None
-            self.console_logger.error(f"{msg}") if console == True else None
+            self.console_logger.error(self._format_console_log(f"{msg}", markup)) if console == True else None
         elif self.is_expert_mode() == False:
             self.file_logger.error(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.error(msg_e) if console == True else None
+            self.console_logger.error(self._format_console_log(msg_e, markup)) if console == True else None
         else:
             self.file_logger.error(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.error(f"{msg_e}\n{self.get_trackback(e)}\n") if console == True else None
+            self.console_logger.error(self._format_console_log(f"{msg_e}\n{self.get_trackback(e)}\n", markup)) if console == True else None
 
-    def warning(self, msg: str, e: Exception = None, file: bool = True, console: bool = True) -> None:
+    def warning(self, msg: str, e: Exception = None, file: bool = True, console: bool = True, markup: bool = False) -> None:
         msg_e: str = f"{msg} {e}" if msg != "" else f"{e}"
         if e == None:
             self.file_logger.warning(f"{msg}") if file == True else None
-            self.console_logger.warning(f"{msg}") if console == True else None
+            self.console_logger.warning(self._format_console_log(f"{msg}", markup)) if console == True else None
         elif self.is_expert_mode() == False:
             self.file_logger.warning(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.warning(msg_e) if console == True else None
+            self.console_logger.warning(self._format_console_log(msg_e, markup)) if console == True else None
         else:
             self.file_logger.warning(f"{msg_e}\n{self.get_trackback(e)}\n") if file == True else None
-            self.console_logger.warning(f"{msg_e}\n{self.get_trackback(e)}\n") if console == True else None
+            self.console_logger.warning(self._format_console_log(f"{msg_e}\n{self.get_trackback(e)}\n", markup)) if console == True else None
 
     def get_trackback(self, e: Exception) -> str:
         return "".join(traceback.format_exception(e)).strip()
