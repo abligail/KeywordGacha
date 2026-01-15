@@ -5,6 +5,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTime
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import QHBoxLayout
 from PyQt5.QtWidgets import QLayout
 from PyQt5.QtWidgets import QVBoxLayout
@@ -33,6 +34,25 @@ from widget.Separator import Separator
 from widget.WaveformWidget import WaveformWidget
 
 class DashboardCard(CardWidget):
+    _UNIT_LABEL_WIDTH = None
+    _UNIT_LABEL_SAMPLES = (
+        "MToken",
+        "KToken",
+        "MLine",
+        "KLine",
+        "KT/S",
+        "KTask",
+        "Token",
+        "Line",
+        "Task",
+    )
+
+    @classmethod
+    def _get_unit_label_width(cls, font) -> int:
+        if cls._UNIT_LABEL_WIDTH is None:
+            metrics = QFontMetrics(font)
+            cls._UNIT_LABEL_WIDTH = max(metrics.horizontalAdvance(text) for text in cls._UNIT_LABEL_SAMPLES) + 4
+        return cls._UNIT_LABEL_WIDTH
 
     def __init__(self, parent: QWidget, title: str, value: str, unit: str, init: Callable = None, clicked: Callable = None) -> None:
         super().__init__(parent)
@@ -61,17 +81,18 @@ class DashboardCard(CardWidget):
 
         self.unit_label = StrongBodyLabel(unit, self)
         self.unit_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        unit_width = self._get_unit_label_width(self.unit_label.font())
+        self.unit_label.setFixedWidth(unit_width)
+        self.unit_vbox_container.setFixedWidth(unit_width)
         self.unit_vbox.addSpacing(20)
         self.unit_vbox.addWidget(self.unit_label)
 
         self.value_label = LargeTitleLabel(value, self)
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
-        self.body_hbox.addStretch(1)
         self.body_hbox.addWidget(self.value_label, 1)
         self.body_hbox.addSpacing(6)
         self.body_hbox.addWidget(self.unit_vbox_container)
-        self.body_hbox.addStretch(1)
         self.root.addWidget(self.body_hbox_container, 1)
 
         if callable(init):
