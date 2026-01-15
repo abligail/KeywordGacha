@@ -496,15 +496,20 @@ class NERAnalyzer(Base):
             glossary, review_entries = self.apply_multi_agent_pipeline(glossary)
 
         # 排序
-        def count_sort_key(entry: dict[str, str | int | list[str]]) -> tuple[int, str]:
-            count = entry.get("count", 0)
+        def parse_count(value: object) -> int:
             try:
-                count_value = int(count)
+                return int(value)
             except Exception:
-                count_value = 0
-            return (-count_value, str(entry.get("src", "")))
+                return 0
 
-        glossary = sorted(glossary, key = count_sort_key)
+        glossary = sorted(
+            glossary,
+            key = lambda entry: (-parse_count(entry.get("count", 0)), str(entry.get("src", ""))),
+        )
+        count_map = {
+            str(entry.get("src", "")): parse_count(entry.get("count", 0))
+            for entry in glossary
+        }
 
         # 写入文件
         file_manager = FileManager(self.config)
@@ -515,7 +520,15 @@ class NERAnalyzer(Base):
             and self.config.multi_agent_review_output == True
             and review_entries != []
         ):
-            review_entries = sorted(review_entries, key = lambda x: x.get("src", ""))
+            for entry in review_entries:
+                entry["count"] = count_map.get(str(entry.get("src", "")), 0)
+            review_entries = sorted(
+                review_entries,
+                key = lambda entry: (
+                    -count_map.get(str(entry.get("src", "")), 0),
+                    str(entry.get("src", "")),
+                ),
+            )
             file_manager.write_review_to_path(review_entries)
         self.print("")
         self.info(Localizer.get().engine_task_save_done.replace("{PATH}", self.config.output_folder))

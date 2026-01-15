@@ -193,12 +193,12 @@ class FileManager(Base):
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
 
-    def write_review_to_path(self, glossary: list[dict[str, str]]) -> None:
+    def write_review_to_path(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
         self.write_review_to_path_xlsx(glossary)
         self.write_review_to_path_json(glossary)
         self.write_review_to_path_detail(glossary)
 
-    def write_review_to_path_xlsx(self, glossary: list[dict[str, str]]) -> None:
+    def write_review_to_path_xlsx(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
         try:
             glossary = copy.deepcopy(glossary)
 
@@ -208,23 +208,27 @@ class FileManager(Base):
             sheet.column_dimensions["A"].width = 24
             sheet.column_dimensions["B"].width = 24
             sheet.column_dimensions["C"].width = 24
+            sheet.column_dimensions["D"].width = 12
 
-            sheet.auto_filter.ref = "A1:C1"
+            sheet.auto_filter.ref = "A1:D1"
 
             TableManager.set_cell_value(sheet, 1, 1, "src", 10)
             TableManager.set_cell_value(sheet, 1, 2, "dst", 10)
             TableManager.set_cell_value(sheet, 1, 3, "info", 10)
+            TableManager.set_cell_value(sheet, 1, 4, "count", 10)
 
             for row, entry in enumerate(glossary):
+                count = entry.get("count", 0)
                 TableManager.set_cell_value(sheet, row + 2, 1, entry.get("src", ""), 10)
                 TableManager.set_cell_value(sheet, row + 2, 2, entry.get("dst", ""), 10)
                 TableManager.set_cell_value(sheet, row + 2, 3, entry.get("info", ""), 10)
+                TableManager.set_cell_value(sheet, row + 2, 4, count, 10)
 
             book.save(f"{self.config.output_folder}/output_review.xlsx")
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
 
-    def write_review_to_path_json(self, glossary: list[dict[str, str]]) -> None:
+    def write_review_to_path_json(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
         try:
             glossary = copy.deepcopy(glossary)
             review_data = [
@@ -232,6 +236,7 @@ class FileManager(Base):
                     "src": v.get("src", ""),
                     "dst": v.get("dst", ""),
                     "info": v.get("info", ""),
+                    "count": v.get("count", 0),
                 }
                 for v in glossary
             ]
@@ -241,7 +246,7 @@ class FileManager(Base):
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
 
-    def write_review_to_path_detail(self, glossary: list[dict[str, str]]) -> None:
+    def write_review_to_path_detail(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
         try:
             glossary = copy.deepcopy(glossary)
 
@@ -250,6 +255,7 @@ class FileManager(Base):
                     src: str = entry.get("src", "")
                     dst: str = entry.get("dst", "")
                     info: str = entry.get("info", "")
+                    count: int = entry.get("count", 0)
                     reason: str = entry.get("review_reason", "")
                     evidence: str = entry.get("review_evidence", "")
                     context = entry.get("review_context", "")
@@ -257,6 +263,7 @@ class FileManager(Base):
                     writer.write(f"{Localizer.get().ner_output_log_src}{src}" + "\n")
                     writer.write(f"{Localizer.get().ner_output_log_dst}{dst}" + "\n")
                     writer.write(f"{Localizer.get().ner_output_log_info}{info}" + "\n")
+                    writer.write(f"{Localizer.get().ner_output_log_count}{count}" + "\n")
                     if reason != "":
                         writer.write(f"{Localizer.get().ner_output_log_review_reason}{reason}" + "\n")
                     if evidence != "":

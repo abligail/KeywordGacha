@@ -21,7 +21,7 @@ class Config():
         AUTO = "AUTO"
 
     # Application
-    theme: str = Theme.LIGHT
+    theme: str = Theme.AUTO
     app_language: BaseLanguage.Enum = BaseLanguage.Enum.ZH
 
     # PlatformPage
@@ -29,7 +29,7 @@ class Config():
     platforms: list[dict[str, Any]] = None
 
     # AppSettingsPage
-    expert_mode: bool = False
+    expert_mode: bool = True
     proxy_url: str = ""
     proxy_enable: bool = False
     font_hinting: bool = True
@@ -59,9 +59,9 @@ class Config():
     multi_agent_gender_high_confidence_min_count: int = 5
     multi_agent_review_high_freq_min_count: int = 5
     multi_agent_apply_on_export: bool = False
-    multi_agent_translate_post: bool = False
+    multi_agent_translate_post: bool = True
     multi_agent_title_filter_enable: bool = False
-    multi_agent_review_arbitrate: bool = False
+    multi_agent_review_arbitrate: bool = True
     multi_agent_review_arbitrate_apply: bool = True
 
     # ProjectPage
