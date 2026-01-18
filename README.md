@@ -1,101 +1,82 @@
-<h1><p align='center' >KeywordGacha</p></h1>
-<div align=center><img src="https://img.shields.io/github/v/release/neavo/KeywordGacha"/>   <img src="https://img.shields.io/github/license/neavo/KeywordGacha"/>   <img src="https://img.shields.io/github/stars/neavo/KeywordGacha"/></div>
-<p align='center'>使用 AI 能力一键分析 小说、游戏、字幕 等文本内容并生成术语表的次世代翻译辅助工具</p>
+# KeywordGacha（Fork）
 
+使用大模型从 `小说 / 字幕 / 游戏文本` 中自动抽取术语表，并通过多 Agent 流水线进行 **去噪、性别补全、翻译后置与复核输出**。
 
-&ensp;
-&ensp;
+> 本仓库为个人 fork，工作流已与原版不同；原版项目与文档请见：https://github.com/neavo/KeywordGacha
 
+## 你会得到什么
 
-## 概述 📢
-- [KeywordGacha](https://github.com/neavo/KeywordGacha)，简称 KG，使用 AI 技术来自动生成 `术语表` 的次世代工具
-  - 高质量的 `术语表` 是保障翻译质量的最重要手段，没有之一
-  - 在长篇文本的翻译过程中，`术语表` 可以实现 `名词统一` `人称矫正` `角色关系引导` 等目的
-- 开箱即用，（几乎）无需设置，功能的强大，不需要通过繁琐的设置来体现
-- 支持 `中` `英` `日` `韩` `俄` `德` `法` `意` 等 16 种语言的分析与输出
-- 支持 `字幕`、`电子书`、`游戏文本` 等多种文本类型与文本格式
-- 支持 `Claude`、`ChatGPT`、`DeepSeek` 等各种本地或在线接口
+- **主术语表**：`output/output.xlsx`（同时生成 `output/output.json`、`output/output_detail.txt`）
+  - 字段：`src`（原文）/ `dst`（译文）/ `info`（类型或性别）/ `count`（出现次数）
+  - 可选：开启“输出候选数据”后，会额外输出 `dst_choices`、`info_choices`
+  - 可选：开启“输出 KVJSON 文件”后，会额外生成 `output/output_kv.json`（`{src: dst}`）
+- **复核表（可选）**：`output/output_review.xlsx`（同时生成 `output/output_review.json`、`output/output_review_detail.txt`）
+  - 收录：低置信度、证据不足、类型冲突、翻译候选冲突、仲裁不一致等条目，方便人工快速筛查
+  - 可选：开启“复核分表输出”后，会按类型拆分为 `output_review_<type>.*`
 
-> <img src="https://github.com/user-attachments/assets/5cb7e5be-86b4-491f-a15d-57b017df716f" style="width: 80%;" alt="image/01.jpg">
+## 核心改动：多 Agent 术语表流程
 
-> <img src="https://github.com/user-attachments/assets/d8619102-cc2d-40cc-b889-d6a5bf0b3fcd" style="width: 80%;" alt="image/02.jpg">
+相比原版“全文切片直接产出术语表”，本 fork 增加了多阶段净化流程（会显著增加调用量，但更利于人工校对）：
 
-## 特别说明 ⚠️
-- 如您在翻译过程中使用了 [KeywordGacha](https://github.com/neavo/KeywordGacha)，请在作品信息或发布页面的显要位置进行说明 ！
-- 如您的项目涉及任何商业行为或者商业收益，在使用 [KeywordGacha](https://github.com/neavo/KeywordGacha) 前，请先与作者联系以获得授权 ！
+1. **抽取器（Extractor）**：高召回率抓取候选术语（默认不强制性别、不要求完美翻译）。
+2. **验证器（Validator）**：将候选词回填到命中上下文片段，剔除泛词/头衔/残片/普通名词等噪声。
+3. **性别判定（Gender）**：仅对人名，根据多窗口上下文投票与证据引用，收敛为 `男性人名 / 女性人名`（无法判断则标记低置信度并进入复核）。
+4. **翻译器（Translator，可选）**：在验证与性别补全之后再翻译术语，减少“翻译了垃圾词”的浪费。
+5. **复核仲裁（Arbiter，可选）**：对复核条目再跑一遍仲裁；高置信度结果可回填主表。
 
-## 功能优势 📌
-- 极快的处理速度，几分钟内完成 `字幕` `小说` `游戏文本` 的分析
-- 相较传统工具，具有高命中、语义化、智能总结角色信息等特色，对文本的兼容性更好
-- 极大的提升 `小说`、`漫画`、`字幕`、`游戏文本` 等内容译前准备时制作词语表的工作效率
-- 随机选取 [绿站榜单作品](https://books.fishhawk.top) 作为测试样本，与人工校对制作的词表对比，命中率约为 `90%+`
+上下文采用 **Target-Anchor Snippets**：以术语命中行为锚点，取 `±N` 行生成片段，标记 `【TARGET】…【/TARGET】` 并编号为 `[S001]`、`[S002]`……，要求模型在 `evidence` 中引用片段编号。
 
-## 配置要求 🖥️
-- 兼容 `OpenAI` `Google` `Anthropic` 格式的 AI 大模型接口
-- 兼容 [LinguaGacha](https://github.com/neavo/LinguaGacha) `使用 AI 能力一键翻译小说、游戏、字幕的次世代文本翻译器` 👈👈
+## 支持的输入格式
 
-## 基本流程 🛸
-- 从 [发布页](https://github.com/neavo/KeywordGacha/releases) 下载应用
-- 获取一个可靠的 AI 大模型接口，建议选择其一：
-  - [ [本地接口](https://github.com/neavo/OneClickLLAMA) ]，免费，需至少 8G 显存的独立显卡，Nvidia 显卡为佳
-  - [ [火山引擎](https://github.com/neavo/KeywordGacha/wiki/VolcEngine) ]，需付费但便宜，速度快，质量高，无显卡要求　`👈👈 推荐`
-  - [ [DeepSeek](https://github.com/neavo/KeywordGacha/wiki/DeepSeek) ]，需付费但便宜，速度快，质量高，无显卡要求 `👈👈 白天不稳定，备选`
-- 准备要翻译的文本
-  - `字幕`、`电子书` 等一般不需要预处理
-  - `游戏文本` 需要根据游戏引擎选择合适的工具进行提取
-- 双击 `app.exe` 启动应用
-  - 在 `项目设置` 中设置原文语言、译文语言等必要信息
-  - 将要翻译的文本文件复制到输入文件夹（默认为 `input` 文件夹），在 `开始任务` 中点击 `开始`
-- 结果保存在输出文件夹（默认为 `output` 文件夹），可以直接导入 [LinguaGacha](https://github.com/neavo/LinguaGacha) 等翻译器使用
+启动任务时会递归读取 `input_folder`（或直接指定单个文件）内的内容：
 
-## 文本格式 🏷️
-- 在任务开始时，应用将读取输入文件夹（及其子目录）内所有支持的文件，包括但是不限于：
-  - 字幕（.srt .ass）
-  - 电子书（.txt .epub）
-  - Markdown（.md）
-  - [RenPy](https://www.renpy.org) 导出游戏文本（.rpy）
-  - [MTool](https://mtool.app) 导出游戏文本（.json）
-  - [SExtractor](https://github.com/satan53x/SExtractor) 导出游戏文本（.txt .json .xlsx）
-  - [VNTextPatch](https://github.com/arcusmaximus/VNTranslationTools) 导出游戏文本（.json）
-  - [Translator++](https://dreamsavior.net/translator-plusplus) 项目文件（.trans）
-  - [Translator++](https://dreamsavior.net/translator-plusplus) 导出游戏文本（.xlsx）
-  - [WOLF 官方翻译工具](https://silversecond.booth.pm/items/5151747) 导出游戏文本（.xlsx）
-- 具体示例可见 [Wiki - 支持的文件格式](https://github.com/neavo/KeywordGacha/wiki/%E6%94%AF%E6%8C%81%E7%9A%84%E6%96%87%E4%BB%B6%E6%A0%BC%E5%BC%8F)，更多格式将持续添加，你也可以在 [ISSUES](https://github.com/neavo/KeywordGacha/issues) 中提出你的需求
+- `字幕`：`.srt` / `.ass`
+- `电子书/纯文本`：`.txt` / `.epub`
+- `Markdown`：`.md`
+- `游戏文本`：`.rpy` / `.trans` / `.xlsx` / `.json`（兼容多种提取器导出）
 
-## 近期更新 📅
-- 20250612 v0.20.2
-  - 修正 - 不能继续任务的问题
+## 使用方式
 
-- 20250612 v0.20.1
-  - 新增 - 输出候选数据
-  - 新增 - 输出 KVJSON 文件
+### GUI（推荐）
 
-- 20250611 v0.20.0
-  - 久等了，欢迎使用 `基于原生 AI 技术` 的全新 `KeywordGacha`
-    - 双语图形化界面
-    - 大幅度缩小应用体积
-    - 支持 `术语类型` 自定义
-    - 支持 `多语言` 分析与输出
-    - 支持 `Google` `OpenAI` `Anthropic` 全格式接口
-    - 原生 AI 工作流，显著提升在强力模型上的提取效果
-    - 更多变化，等你发掘 ！
+1. 启动：双击 `app.exe` 或运行 `python app.py`
+2. 在“接口”页配置模型：填写 `api_url`、`api_key`（可多行轮换）、`model`，可点击“测试”
+3. 在“项目”页设置源/目标语言与 `input/output` 路径
+4. 将文本放入 `input` 文件夹，进入“任务”页点击“开始”
 
-## 常见问题 📥
-- 分析 `小说文本` 的最佳实践
-  - 提前移除 `作者评论`、`出版社信息` 等与故事内容无关的文本
+完成后查看 `output` 目录；任务中断可在“任务”页选择继续（缓存保存在 `output/cache/`）。
 
-- 处理 `游戏文本` 的最佳实践
-  - 推荐使用以下格式：
-    - [RenPy](https://www.renpy.org) 导出游戏文本（.rpy）
-    - [Translator++](https://dreamsavior.net/translator-plusplus) 项目文件（.trans）
-    - [Translator++](https://dreamsavior.net/translator-plusplus) 导出游戏文本（.xlsx）
-  - 避免使用以下格式：
-    - [MTool](https://mtool.app) 导出游戏文本（.json）
-  - 如果抓取效果不好，可以多试几种导出工具和格式，有时候会有奇效
+### CLI
 
-## 问题反馈 😥
-- 运行时的日志保存在程序目录下的 `*.log` 等日志文件内
-- 反馈问题的时候请附上这些日志文件
-- 你也可以来群组讨论与反馈
-  - QQ - 41763231⑥
-  - Discord - https://discord.gg/pyMRBGse75
+```bash
+python app.py --cli --input_folder ./input --output_folder ./output --source_language JA --target_language ZH
+```
+
+可选参数：`--config <path>`（指定配置文件）。注意：CLI 模式下 `--input_folder/--output_folder` 需要是已存在的目录。
+
+## 可调参数（与本 fork 相关）
+
+在“基础设置/专家设置”中可调整：
+
+- **回复 Token 上限**：限制单次请求的最大输出（`max_output_tokens`）
+- **请求重试/退避**：失败自动重试（`request_retry_max`、`request_retry_backoff`）
+- **多 Agent 流程开关**：`multi_agent_enable`、`multi_agent_translate_post`、`multi_agent_review_output`
+- **上下文窗口/预算**：`multi_agent_context_window`、`multi_agent_context_budget(_long)`
+- **性别判定投票/重试**：高频多窗口投票、低置信度长上下文重试
+- **复核仲裁**：`multi_agent_review_arbitrate`、`multi_agent_review_arbitrate_apply`
+
+提示词模板默认位于 `resource/prompt/{zh,en}/`，也可在“质量→自定义提示词”页面覆盖模板。
+
+## 从源码运行 / 打包
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+打包（Windows）：安装 `pyinstaller` 后运行 `python resource/pyinstaller.py`，输出到 `dist/KeywordGacha/`。
+
+## 致谢与说明
+
+- 原始项目：neavo/KeywordGacha：https://github.com/neavo/KeywordGacha
+- 如用于作品发布、或涉及商业使用，请务必遵循原项目的授权与署名要求。  

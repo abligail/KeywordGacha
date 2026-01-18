@@ -193,12 +193,63 @@ class FileManager(Base):
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
 
+    def normalize_review_types(self, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text != "" else []
+        if isinstance(value, (list, tuple, set)):
+            normalized: list[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                text = str(item).strip()
+                if text == "":
+                    continue
+                if text not in normalized:
+                    normalized.append(text)
+            return normalized
+        text = str(value).strip()
+        return [text] if text != "" else []
+
+    def normalize_review_suffix(self, value: object) -> str:
+        text = str(value).strip().lower()
+        text = re.sub(r"[^a-z0-9]+", "_", text)
+        text = text.strip("_")
+        return text if text != "" else "unknown"
+
+    def split_review_entries(self, glossary: list[dict[str, str | int | list[str]]]) -> dict[str, list[dict[str, str | int | list[str]]]]:
+        groups: dict[str, list[dict[str, str | int | list[str]]]] = {}
+        for entry in glossary:
+            review_types = self.normalize_review_types(entry.get("review_types"))
+            if review_types == []:
+                review_types = ["unknown"]
+            for review_type in review_types:
+                groups.setdefault(review_type, []).append(entry)
+        return groups
+
     def write_review_to_path(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
+        if self.config.multi_agent_review_split == True:
+            groups = self.split_review_entries(glossary)
+            if groups == {}:
+                return None
+            for review_type, entries in groups.items():
+                suffix = self.normalize_review_suffix(review_type)
+                self.write_review_to_path_xlsx(entries, suffix)
+                self.write_review_to_path_json(entries, suffix)
+                self.write_review_to_path_detail(entries, suffix)
+            return None
+
         self.write_review_to_path_xlsx(glossary)
         self.write_review_to_path_json(glossary)
         self.write_review_to_path_detail(glossary)
 
-    def write_review_to_path_xlsx(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
+    def write_review_to_path_xlsx(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        suffix: str | None = None,
+    ) -> None:
         try:
             glossary = copy.deepcopy(glossary)
 
@@ -224,11 +275,16 @@ class FileManager(Base):
                 TableManager.set_cell_value(sheet, row + 2, 3, entry.get("info", ""), 10)
                 TableManager.set_cell_value(sheet, row + 2, 4, count, 10)
 
-            book.save(f"{self.config.output_folder}/output_review.xlsx")
+            file_name = "output_review" if suffix is None else f"output_review_{suffix}"
+            book.save(f"{self.config.output_folder}/{file_name}.xlsx")
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
 
-    def write_review_to_path_json(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
+    def write_review_to_path_json(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        suffix: str | None = None,
+    ) -> None:
         try:
             glossary = copy.deepcopy(glossary)
             review_data = [
@@ -241,16 +297,22 @@ class FileManager(Base):
                 for v in glossary
             ]
 
-            with open(f"{self.config.output_folder}/output_review.json", "w", encoding = "utf-8") as writer:
+            file_name = "output_review" if suffix is None else f"output_review_{suffix}"
+            with open(f"{self.config.output_folder}/{file_name}.json", "w", encoding = "utf-8") as writer:
                 writer.write(json.dumps(review_data, indent = 4, ensure_ascii = False))
         except Exception as e:
             self.error(f"{Localizer.get().log_read_file_fail}", e)
 
-    def write_review_to_path_detail(self, glossary: list[dict[str, str | int | list[str]]]) -> None:
+    def write_review_to_path_detail(
+        self,
+        glossary: list[dict[str, str | int | list[str]]],
+        suffix: str | None = None,
+    ) -> None:
         try:
             glossary = copy.deepcopy(glossary)
 
-            with open(f"{self.config.output_folder}/output_review_detail.txt", "w", encoding = "utf-8") as writer:
+            file_name = "output_review" if suffix is None else f"output_review_{suffix}"
+            with open(f"{self.config.output_folder}/{file_name}_detail.txt", "w", encoding = "utf-8") as writer:
                 for entry in glossary:
                     src: str = entry.get("src", "")
                     dst: str = entry.get("dst", "")

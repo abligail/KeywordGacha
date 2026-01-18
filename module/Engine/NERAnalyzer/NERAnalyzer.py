@@ -2290,6 +2290,66 @@ class NERAnalyzer(Base):
 
         return short_result
 
+    def build_gender_review_types(self, reason_key: str) -> list[str]:
+        reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        mapping = {
+            "low_confidence": "gender_low_confidence",
+            "low_confidence_high_count": "gender_low_confidence_high_count",
+            "invalid_evidence": "gender_invalid_evidence",
+            "gender_conflict": "gender_conflict",
+            "invalid_output": "gender_invalid_output",
+        }
+        return [mapping.get(reason_key, "gender_invalid_output")]
+
+    def build_translation_review_types(self, reason_key: str) -> list[str]:
+        reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        mapping = {
+            "conflict": "translation_conflict",
+            "missing": "translation_missing",
+            "invalid_output": "translation_invalid_output",
+        }
+        return [mapping.get(reason_key, "translation_invalid_output")]
+
+    def build_validator_review_types(self, reason_key: str) -> list[str]:
+        reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        if reason_key.startswith("arbiter_"):
+            return [reason_key]
+        mapping = {
+            "request_failed": "validator_request_failed",
+            "parse_failed": "validator_parse_failed",
+            "missing": "validator_missing",
+            "title_filtered": "title_filtered",
+            "type_conflict": "type_conflict",
+            "insufficient_evidence": "insufficient_evidence",
+        }
+        return [mapping.get(reason_key, "validator_failed")]
+
+    def normalize_review_type_list(self, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text != "" else []
+        if isinstance(value, (list, tuple, set)):
+            normalized: list[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                text = str(item).strip()
+                if text == "":
+                    continue
+                normalized.append(text)
+            return normalized
+        text = str(value).strip()
+        return [text] if text != "" else []
+
+    def merge_review_types(self, left: object, right: object) -> list[str]:
+        merged: list[str] = []
+        for value in self.normalize_review_type_list(left) + self.normalize_review_type_list(right):
+            if value not in merged:
+                merged.append(value)
+        return merged
+
     def build_review_entry(
         self,
         entry: dict[str, str | int | list[str]],
@@ -2298,6 +2358,7 @@ class NERAnalyzer(Base):
         evidence: str,
         context: str,
     ) -> dict[str, str]:
+        review_types = self.build_gender_review_types(reason_key)
         if prompt_language == BaseLanguage.Enum.ZH:
             if reason_key == "low_confidence":
                 reason = "证据不足/冲突"
@@ -2330,6 +2391,7 @@ class NERAnalyzer(Base):
             "review_reason": reason,
             "review_evidence": evidence,
             "review_context": context,
+            "review_types": review_types,
         }
 
     def build_translation_review_entry(
@@ -2342,6 +2404,7 @@ class NERAnalyzer(Base):
         existing: str,
     ) -> dict[str, str]:
         reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        review_types = self.build_translation_review_types(reason_key)
         if prompt_language == BaseLanguage.Enum.ZH:
             if reason_key == "conflict":
                 reason = "翻译冲突"
@@ -2376,6 +2439,7 @@ class NERAnalyzer(Base):
             "review_reason": reason,
             "review_evidence": "",
             "review_context": context,
+            "review_types": review_types,
         }
 
     def build_arbiter_review_entry(
@@ -2399,6 +2463,7 @@ class NERAnalyzer(Base):
         context: str,
     ) -> dict[str, str]:
         reason_key = reason_key.strip().lower() if isinstance(reason_key, str) else ""
+        review_types = self.build_validator_review_types(reason_key)
         reason_detail = ""
         if prompt_language == BaseLanguage.Enum.ZH:
             if reason_key == "request_failed":
@@ -2460,6 +2525,7 @@ class NERAnalyzer(Base):
             "review_reason": review_reason,
             "review_evidence": "",
             "review_context": context,
+            "review_types": review_types,
         }
 
     def merge_review_entries(self, *groups: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -2488,6 +2554,10 @@ class NERAnalyzer(Base):
                     self.flatten_review_context(merged_entry.get("review_context", "")),
                     self.flatten_review_context(entry.get("review_context", "")),
                     "\n---\n",
+                )
+                merged_entry["review_types"] = self.merge_review_types(
+                    merged_entry.get("review_types", []),
+                    entry.get("review_types", []),
                 )
 
                 if merged_entry.get("info", "") == "" and entry.get("info", "") != "":

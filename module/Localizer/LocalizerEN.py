@@ -256,6 +256,8 @@ class LocalizerEN(LocalizerZH):
     expert_settings_page_multi_agent_description: str = "Enable validation + gender completion + review output stages"
     expert_settings_page_multi_agent_review_title: str = "Output Review Files"
     expert_settings_page_multi_agent_review_description: str = "Write review files for low-confidence or conflicting entries"
+    expert_settings_page_multi_agent_review_split_title: str = "Split Review Outputs"
+    expert_settings_page_multi_agent_review_split_description: str = "Write separate review files by review type"
     expert_settings_page_multi_agent_context_window_title: str = "Snippet Window Size"
     expert_settings_page_multi_agent_context_window_description: str = "Lines to include before/after each hit"
     expert_settings_page_multi_agent_context_budget_title: str = "Short Context Budget"

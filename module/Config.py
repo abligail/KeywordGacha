@@ -50,6 +50,7 @@ class Config():
     output_choices: bool = False
     multi_agent_enable: bool = True
     multi_agent_review_output: bool = True
+    multi_agent_review_split: bool = False
     multi_agent_context_window: int = 2
     multi_agent_context_budget: int = 4000
     multi_agent_context_budget_long: int = 8000

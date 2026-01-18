@@ -260,6 +260,8 @@ class LocalizerZH():
     expert_settings_page_multi_agent_description: str = "启用多阶段术语表流程（验证 + 性别补全 + 复核输出）"
     expert_settings_page_multi_agent_review_title: str = "输出复核文件"
     expert_settings_page_multi_agent_review_description: str = "对低置信度或冲突项输出复核文件"
+    expert_settings_page_multi_agent_review_split_title: str = "复核分表输出"
+    expert_settings_page_multi_agent_review_split_description: str = "按复核类型拆分复核文件"
     expert_settings_page_multi_agent_context_window_title: str = "snippet 窗口行数"
     expert_settings_page_multi_agent_context_window_description: str = "以命中行为锚点，向前/向后扩展的行数（两侧）"
     expert_settings_page_multi_agent_context_budget_title: str = "snippet 短上下文预算"

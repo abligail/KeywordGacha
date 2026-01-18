@@ -42,6 +42,7 @@ class ExpertSettingsPage(QWidget, Base):
         # 添加控件
         self.add_widget_multi_agent_enable(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_review_output(scroll_area_vbox, config, window)
+        self.add_widget_multi_agent_review_split(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_context_window(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_context_budget(scroll_area_vbox, config, window)
         self.add_widget_multi_agent_context_budget_long(scroll_area_vbox, config, window)
@@ -122,6 +123,28 @@ class ExpertSettingsPage(QWidget, Base):
             SwitchButtonCard(
                 title = Localizer.get().expert_settings_page_multi_agent_review_title,
                 description = Localizer.get().expert_settings_page_multi_agent_review_description,
+                init = init,
+                checked_changed = checked_changed,
+            )
+        )
+
+    # 复核分表输出
+    def add_widget_multi_agent_review_split(self, parent: QLayout, config: Config, windows: FluentWindow) -> None:
+
+        def init(widget: SwitchButtonCard) -> None:
+            widget.get_switch_button().setChecked(
+                config.multi_agent_review_split
+            )
+
+        def checked_changed(widget: SwitchButtonCard) -> None:
+            config = Config().load()
+            config.multi_agent_review_split = widget.get_switch_button().isChecked()
+            config.save()
+
+        parent.addWidget(
+            SwitchButtonCard(
+                title = Localizer.get().expert_settings_page_multi_agent_review_split_title,
+                description = Localizer.get().expert_settings_page_multi_agent_review_split_description,
                 init = init,
                 checked_changed = checked_changed,
             )
